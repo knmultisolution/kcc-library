@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kilinochchi Central College Library</title>
+<link rel="icon" href="kcc_logo.png">
+<link href="https://fonts.googleapis.com/css2?family=Hind+Madurai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#22272d;--slate:#2b3036;--gate:#e4572e;--gate-d:#c4431f;--paper:#fff;--wash:#f3f4f6;--line:#dfe2e6;--mute:#5d6670;--ok:#1d7a4b;--warn:#b42318}
+*{box-sizing:border-box}
+body{margin:0;font-family:'Hind Madurai',system-ui,sans-serif;color:var(--ink);background:var(--wash);line-height:1.55}
+button,input,select{font:inherit}
+:focus-visible{outline:3px solid var(--gate);outline-offset:2px}
+header.bar{background:var(--slate);position:sticky;top:0;z-index:5}
+.bar .in{max-width:1100px;margin:auto;padding:10px 20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.bar img{height:44px}
+.bar .name{color:#fff;font-weight:600;font-size:17px;line-height:1.2}
+.bar .name small{display:block;font-weight:400;color:#b8c0c8;font-size:13px}
+.bar nav{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap}
+.nb{background:none;border:0;color:#dfe4e9;padding:8px 12px;border-radius:6px;cursor:pointer}
+.nb:hover,.nb.on{background:#3d444c;color:#fff}
+.nb.cta{background:var(--gate);color:#fff;font-weight:600}
+.nb.cta:hover{background:var(--gate-d)}
+.hero{background:linear-gradient(rgba(26,30,35,.72),rgba(26,30,35,.82)),url(kcc-enter.jpeg) center/cover;color:#fff;padding:64px 20px 72px}
+.hero .in{max-width:1100px;margin:auto}
+.hero h1{font-size:clamp(30px,5vw,46px);line-height:1.15;margin:0 0 8px;max-width:16em}
+.hero p{margin:0 0 26px;color:#d5dbe1;font-size:18px}
+.search{display:flex;gap:8px;max-width:680px;flex-wrap:wrap}
+.search input{flex:1 1 260px;padding:14px 16px;border:0;border-radius:8px;font-size:16px}
+.search select{padding:14px;border:0;border-radius:8px;background:#fff}
+main{max-width:1100px;margin:auto;padding:28px 20px 60px}
+.panel{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:22px;margin-bottom:22px}
+h2{margin:0 0 14px;font-size:22px}
+.row{display:grid;grid-template-columns:2.2fr 1.4fr 1fr auto;gap:12px;align-items:center;padding:14px 4px;border-top:1px solid var(--line)}
+.row:first-of-type{border-top:0}
+.row b{display:block}
+.row span.m{color:var(--mute);font-size:14px}
+.chip{display:inline-block;padding:3px 10px;border-radius:99px;font-size:13px;font-weight:600}
+.chip.a{background:#e4f5ec;color:var(--ok)}.chip.b{background:#fdeceb;color:var(--warn)}
+.acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.btn{border:1px solid var(--line);background:#fff;padding:7px 12px;border-radius:6px;cursor:pointer;font-weight:500}
+.btn:hover{border-color:var(--ink)}
+.btn.p{background:var(--gate);border-color:var(--gate);color:#fff}.btn.p:hover{background:var(--gate-d)}
+.btn.d{color:var(--warn)}
+.tabs{display:flex;gap:6px;border-bottom:1px solid var(--line);margin-bottom:18px;flex-wrap:wrap}
+.tab{background:none;border:0;padding:10px 14px;cursor:pointer;border-bottom:3px solid transparent;color:var(--mute);font-weight:500}
+.tab.on{color:var(--ink);border-color:var(--gate)}
+form.g{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+label{display:block;font-size:14px;color:var(--mute)}
+label input,label select{display:block;width:100%;margin-top:4px;padding:10px 12px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink)}
+.empty{color:var(--mute);padding:22px 4px}
+dialog{border:0;border-radius:12px;padding:26px;width:min(400px,92vw);box-shadow:0 20px 50px rgba(0,0,0,.35)}
+dialog::backdrop{background:rgba(20,24,28,.6)}
+dialog h3{margin:0 0 4px;font-size:22px}
+dialog p{margin:0 0 16px;color:var(--mute)}
+dialog label{margin-bottom:12px}
+dialog .acts{margin-top:8px}
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--slate);color:#fff;padding:12px 18px;border-radius:8px;display:none;z-index:20;max-width:90vw}
+#toast.err{background:var(--warn)}
+footer{background:var(--slate);color:#b8c0c8;text-align:center;padding:26px 20px;font-size:14px}
+footer b{color:#fff}
+[hidden]{display:none!important}
+@media(max-width:720px){.row{grid-template-columns:1fr auto}.row .cat{display:none}.bar nav{margin-left:0;width:100%}}
+</style>
+</head>
+<body>
+
+<header class="bar"><div class="in">
+  <img src="kccl.png" alt="KCC crest">
+  <div class="name">Kilinochchi Central College<small>School Library</small></div>
+  <nav>
+    <button class="nb on" data-view="catalog">Catalogue</button>
+    <button class="nb" data-view="request" id="navReq" hidden>Request a book</button>
+    <button class="nb" data-view="admin" id="navAdmin" hidden>Librarian desk</button>
+    <button class="nb cta" id="authBtn">Sign in</button>
+  </nav>
+</div></header>
+
+<section class="hero"><div class="in">
+  <h1>Find your next book at KCC</h1>
+  <p>கற்று ஆய்ந்து ஒழுகு &nbsp;·&nbsp; Serving our students since 1927</p>
+  <div class="search">
+    <input id="q" type="search" placeholder="Search by title, author or ledger number" aria-label="Search books">
+    <select id="cat" aria-label="Category"><option value="">All categories</option></select>
+  </div>
+</div></section>
+
+<main>
+  <section id="v-catalog" class="panel"><h2>Catalogue</h2><div id="list"></div></section>
+
+  <section id="v-request" class="panel" hidden>
+    <h2>Request a book</h2>
+    <p class="m" style="color:var(--mute);margin-top:-8px">Can't find a title? Tell the librarian and we'll consider adding it.</p>
+    <form class="g" id="reqForm">
+      <label>Book title<input name="title" required></label>
+      <label>Author<input name="author"></label>
+      <div style="align-self:end"><button class="btn p">Send request</button></div>
+    </form>
+  </section>
+
+  <section id="v-admin" class="panel" hidden>
+    <h2>Librarian desk</h2>
+    <div class="tabs" id="tabs">
+      <button class="tab on" data-tab="add">Add a book</button>
+      <button class="tab" data-tab="members">Members</button>
+      <button class="tab" data-tab="requests">Requests</button>
+      <button class="tab" data-tab="overdue">Overdue</button>
+      <button class="tab" data-tab="history">History</button>
+    </div>
+    <div id="t-add">
+      <form class="g" id="bookForm">
+        <label>Title<input name="title" required></label>
+        <label>Author<input name="author" required></label>
+        <label>Category<input name="category" required></label>
+        <label>Ledger number<input name="ledger_info"></label>
+        <label>Copies<input name="quantity" type="number" min="1" value="1"></label>
+        <label>PDF link (optional)<input name="pdf_url" type="url"></label>
+        <div style="align-self:end"><button class="btn p">Add book</button></div>
+      </form>
+    </div>
+    <div id="t-members" hidden>
+      <form class="g" id="memForm" style="margin-bottom:18px">
+        <label>Member ID<input name="id" required></label>
+        <label>Full name<input name="name" required></label>
+        <label>Email<input name="email" type="email"></label>
+        <label>Phone<input name="phone"></label>
+        <label>Role<select name="role"><option>Student</option><option>Teacher</option></select></label>
+        <div style="align-self:end"><button class="btn p">Add member</button></div>
+      </form>
+      <div id="memList"></div>
+    </div>
+    <div id="t-requests" hidden></div>
+    <div id="t-overdue" hidden></div>
+    <div id="t-history" hidden></div>
+  </section>
+</main>
+
+<footer><b>Kilinochchi Central College</b> (National School), Kilinochchi, Sri Lanka</footer>
+
+<dialog id="loginDlg">
+  <form method="dialog" id="loginForm">
+    <h3>Sign in</h3><p>Use your name and member ID.</p>
+    <label>Name or member ID<input name="username" autocomplete="username" required></label>
+    <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
+    <div class="acts"><button type="button" class="btn" id="loginCancel">Cancel</button><button class="btn p">Sign in</button></div>
+  </form>
+</dialog>
+
+<dialog id="askDlg">
+  <form method="dialog" id="askForm">
+    <h3 id="askTitle">Issue book</h3><p id="askText"></p>
+    <label>Member ID<input id="askInput" required></label>
+    <div class="acts"><button type="button" class="btn" id="askCancel">Cancel</button><button class="btn p">Issue book</button></div>
+  </form>
+</dialog>
+
+<div id="toast" role="status"></div>
+
+<script>
+const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let me = JSON.parse(localStorage.getItem('kccUser') || 'null'), books = [];
+
+function toast(msg, err) {
+  const t = $('#toast'); t.textContent = msg; t.className = err ? 'err' : ''; t.style.display = 'block';
+  clearTimeout(toast.t); toast.t = setTimeout(() => t.style.display = 'none', 3200);
+}
+async function api(url, method = 'GET', body) {
+  const r = await fetch(url, {
+    method, headers: { 'Content-Type': 'application/json', ...(me ? { Authorization: 'Bearer ' + me.token } : {}) },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const data = await r.json().catch(() => ({}));
+  if (r.status === 401 && me) { signOut(); toast('Your session ended. Please sign in again.', true); }
+  if (!r.ok) throw new Error(data.error || 'Something went wrong.');
+  return data;
+}
+const run = async (fn, ok) => { try { await fn(); if (ok) toast(ok); } catch (e) { toast(e.message, true); } };
+
+// ---- views ----
+function show(view) {
+  ['catalog', 'request', 'admin'].forEach(v => $('#v-' + v).hidden = v !== view);
+  $$('.nb[data-view]').forEach(b => b.classList.toggle('on', b.dataset.view === view));
+  if (view === 'admin') loadTab(document.querySelector('.tab.on').dataset.tab);
+}
+$$('.nb[data-view]').forEach(b => b.onclick = () => show(b.dataset.view));
+
+function refreshChrome() {
+  $('#authBtn').textContent = me ? 'Sign out (' + me.name.split(' ')[0] + ')' : 'Sign in';
+  $('#navReq').hidden = !me;
+  $('#navAdmin').hidden = !(me && me.role === 'admin');
+  if (!me || (me.role !== 'admin' && !$('#v-admin').hidden)) show('catalog');
+  renderBooks();
+}
+function signOut() { me = null; localStorage.removeItem('kccUser'); refreshChrome(); }
+$('#authBtn').onclick = () => me ? signOut() : $('#loginDlg').showModal();
+$('#loginCancel').onclick = () => $('#loginDlg').close();
+$('#loginForm').onsubmit = e => run(async () => {
+  const f = Object.fromEntries(new FormData(e.target));
+  const r = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f) });
+  const d = await r.json();
+  if (!r.ok) { $('#loginDlg').showModal(); throw new Error(d.error); }
+  me = d; localStorage.setItem('kccUser', JSON.stringify(d)); e.target.reset(); refreshChrome();
+}, 'Signed in.');
+
+// ---- catalogue ----
+async function loadBooks() {
+  await run(async () => {
+    books = await api('/api/books');
+    const cats = [...new Set(books.map(b => b.category))].sort();
+    $('#cat').innerHTML = '<option value="">All categories</option>' + cats.map(c => `<option>${esc(c)}</option>`).join('');
+    renderBooks();
+  });
+}
+function renderBooks() {
+  const t = $('#q').value.toLowerCase(), c = $('#cat').value, admin = me && me.role === 'admin';
+  const rows = books.filter(b => (!c || b.category === c) && [b.title, b.author, b.ledger_info, b.barcode].join(' ').toLowerCase().includes(t));
+  $('#list').innerHTML = rows.length ? rows.map(b => `
+    <div class="row">
+      <div><b>${esc(b.title)}</b><span class="m">${esc(b.author)}${b.ledger_info && b.ledger_info !== 'N/A' ? ' &nbsp;·&nbsp; Ledger ' + esc(b.ledger_info) : ''}</span></div>
+      <div class="cat m">${esc(b.category)}</div>
+      <div>${b.status === 'Available' ? '<span class="chip a">Available</span>' : `<span class="chip b">Due ${esc(b.due_date)}</span>`}</div>
+      <div class="acts">
+        ${b.pdf_url ? `<a class="btn" href="${esc(b.pdf_url)}" target="_blank" rel="noopener">Read PDF</a>` : ''}
+        ${admin ? `<button class="btn p" data-act="toggle" data-id="${b.id}">${b.status === 'Available' ? 'Issue' : 'Return'}</button>
+                   <button class="btn d" data-act="delBook" data-id="${b.id}">Delete</button>` : ''}
+      </div>
+    </div>`).join('') : '<div class="empty">No books match your search. Try a different title or author.</div>';
+}
+$('#q').oninput = $('#cat').onchange = renderBooks;
+
+function askMember(book) {
+  return new Promise(res => {
+    $('#askText').textContent = book.title; $('#askInput').value = '';
+    const d = $('#askDlg'); d.showModal();
+    $('#askCancel').onclick = () => { d.close(); res(null); };
+    $('#askForm').onsubmit = () => res($('#askInput').value.trim());
+  });
+}
+
+// ---- librarian desk ----
+$$('.tab').forEach(b => b.onclick = () => {
+  $$('.tab').forEach(x => x.classList.toggle('on', x === b)); loadTab(b.dataset.tab);
+});
+function loadTab(tab) {
+  ['add', 'members', 'requests', 'overdue', 'history'].forEach(t => $('#t-' + t).hidden = t !== tab);
+  if (tab === 'members') run(async () => {
+    const m = await api('/api/members');
+    $('#memList').innerHTML = m.map(x => `<div class="row"><div><b>${esc(x.name)}</b><span class="m">${esc(x.id)} &nbsp;·&nbsp; ${esc(x.email)}</span></div><div class="cat m">${esc(x.role)}</div><div></div><div class="acts"><button class="btn d" data-act="delMember" data-id="${esc(x.id)}">Remove</button></div></div>`).join('') || '<div class="empty">No members yet. Add the first one above.</div>';
+  });
+  if (tab === 'requests') run(async () => {
+    const r = await api('/api/requests');
+    $('#t-requests').innerHTML = r.map(x => `<div class="row"><div><b>${esc(x.title)}</b><span class="m">${esc(x.author)}</span></div><div class="cat m">Asked by ${esc(x.username)}</div><div></div><div class="acts"><button class="btn p" data-act="approve" data-id="${x.id}">Add to catalogue</button><button class="btn d" data-act="delReq" data-id="${x.id}">Decline</button></div></div>`).join('') || '<div class="empty">No pending requests.</div>';
+  });
+  if (tab === 'overdue') run(async () => {
+    const f = await api('/api/fines');
+    $('#t-overdue').innerHTML = f.map(x => `<div class="row"><div><b>${esc(x.title)}</b><span class="m">${esc(x.borrower_name)} (${esc(x.borrower_id)})</span></div><div class="cat m">Due ${esc(x.due_date)}</div><div><span class="chip b">${x.days} days late</span></div><div><b>Rs. ${x.fine}</b></div></div>`).join('') || '<div class="empty">No overdue books.</div>';
+  });
+  if (tab === 'history') run(async () => {
+    const h = await api('/api/history');
+    $('#t-history').innerHTML = h.map(x => `<div class="row"><div><b>${esc(x.book_title)}</b><span class="m">${esc(x.borrower_name)} (${esc(x.borrower_id)})</span></div><div class="cat m">Issued ${esc(x.issue_date)}</div><div>${x.return_date ? '<span class="chip a">Returned ' + esc(x.return_date) + '</span>' : '<span class="chip b">Out</span>'}</div><div></div></div>`).join('') || '<div class="empty">No borrowing history yet.</div>';
+  });
+}
+
+const actions = {
+  toggle: id => run(async () => {
+    const b = books.find(x => x.id == id); let borrowerId;
+    if (b.status === 'Available') { borrowerId = await askMember(b); if (!borrowerId) return; }
+    await api(`/api/books/${id}/toggle`, 'POST', { borrowerId }); await loadBooks();
+  }, 'Saved.'),
+  delBook: id => confirm('Delete this book from the catalogue?') && run(async () => { await api('/api/books/' + id, 'DELETE'); await loadBooks(); }, 'Book deleted.'),
+  delMember: id => confirm('Remove this member?') && run(async () => { await api('/api/members/' + encodeURIComponent(id), 'DELETE'); loadTab('members'); }, 'Member removed.'),
+  approve: id => run(async () => { await api(`/api/requests/${id}/approve`, 'POST'); loadTab('requests'); await loadBooks(); }, 'Book added to the catalogue.'),
+  delReq: id => run(async () => { await api('/api/requests/' + id, 'DELETE'); loadTab('requests'); }, 'Request declined.')
+};
+document.addEventListener('click', e => { const b = e.target.closest('[data-act]'); if (b) actions[b.dataset.act](b.dataset.id); });
+
+// ---- forms ----
+const submit = (sel, url, done, msg) => $(sel).onsubmit = e => { e.preventDefault(); run(async () => {
+  await api(url, 'POST', Object.fromEntries(new FormData(e.target))); e.target.reset(); await done();
+}, msg); };
+submit('#bookForm', '/api/books', loadBooks, 'Book added.');
+submit('#memForm', '/api/members', () => loadTab('members'), 'Member added.');
+submit('#reqForm', '/api/requests', () => {}, 'Request sent to the librarian.');
+
+refreshChrome(); loadBooks();
+</script>
+</body>
+</html>
