@@ -63,6 +63,7 @@ footer b{color:#fff}
 [hidden]{display:none!important}
 @media(max-width:720px){.row{grid-template-columns:1fr auto}.row .cat{display:none}.bar nav{margin-left:0;width:100%}}
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -107,6 +108,7 @@ footer b{color:#fff}
       <button class="tab" data-tab="requests">Requests</button>
       <button class="tab" data-tab="overdue">Overdue</button>
       <button class="tab" data-tab="history">History</button>
+      <button class="tab" data-tab="import">Import Excel</button>
     </div>
     <div id="t-add">
       <form class="g" id="bookForm">
@@ -133,6 +135,11 @@ footer b{color:#fff}
     <div id="t-requests" hidden></div>
     <div id="t-overdue" hidden></div>
     <div id="t-history" hidden></div>
+    <div id="t-import" hidden>
+      <p style="color:var(--mute);margin-top:0">Excel file (.xlsx) choose pannunga. Columns: <b>Title, Author, Category, Ledger No, Quantity</b>. Tamil and English names rendum work aagum.</p>
+      <input type="file" id="xlsFile" accept=".xlsx,.xls,.csv">
+      <div id="xlsPreview" style="margin-top:16px"></div>
+    </div>
   </section>
 </main>
 
@@ -244,7 +251,7 @@ $$('.tab').forEach(b => b.onclick = () => {
   $$('.tab').forEach(x => x.classList.toggle('on', x === b)); loadTab(b.dataset.tab);
 });
 function loadTab(tab) {
-  ['add', 'members', 'requests', 'overdue', 'history'].forEach(t => $('#t-' + t).hidden = t !== tab);
+  ['add', 'members', 'requests', 'overdue', 'history', 'import'].forEach(t => $('#t-' + t).hidden = t !== tab);
   if (tab === 'members') run(async () => {
     const m = await api('/api/members');
     $('#memList').innerHTML = m.map(x => `<div class="row"><div><b>${esc(x.name)}</b><span class="m">${esc(x.id)} &nbsp;·&nbsp; ${esc(x.email)}</span></div><div class="cat m">${esc(x.role)}</div><div></div><div class="acts"><button class="btn d" data-act="delMember" data-id="${esc(x.id)}">Remove</button></div></div>`).join('') || '<div class="empty">No members yet. Add the first one above.</div>';
@@ -275,6 +282,39 @@ const actions = {
   delReq: id => run(async () => { await api('/api/requests/' + id, 'DELETE'); loadTab('requests'); }, 'Request declined.')
 };
 document.addEventListener('click', e => { const b = e.target.closest('[data-act]'); if (b) actions[b.dataset.act](b.dataset.id); });
+
+// ---- Excel import ----
+const ALIAS = {
+  title: ['title', 'book name', 'book', 'name', 'book title', 'தலைப்பு', 'நூல்'],
+  author: ['author', 'writer', 'ஆசிரியர்'],
+  category: ['category', 'type', 'subject', 'வகை'],
+  ledger_info: ['ledger no', 'ledger', 'ledger_info', 'ledger number', 'accession no'],
+  quantity: ['quantity', 'copies', 'qty', 'count']
+};
+let importRows = [];
+$('#xlsFile').onchange = e => run(async () => {
+  const f = e.target.files[0]; if (!f) return;
+  const wb = XLSX.read(await f.arrayBuffer());
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' });
+  const head = (rows[0] || []).map(x => String(x).trim().toLowerCase());
+  let idx = {}; for (const k in ALIAS) idx[k] = head.findIndex(x => ALIAS[k].includes(x));
+  let body = rows.slice(1);
+  if (idx.title < 0) { idx = { title: 0, author: 1, category: 2, ledger_info: 3, quantity: 4 }; body = rows; }
+  const get = (r, k) => idx[k] >= 0 ? String(r[idx[k]] ?? '').trim() : '';
+  importRows = body.map(r => ({ title: get(r, 'title'), author: get(r, 'author'), category: get(r, 'category'), ledger_info: get(r, 'ledger_info'), quantity: get(r, 'quantity') })).filter(r => r.title);
+  $('#xlsPreview').innerHTML = importRows.length
+    ? `<b>${importRows.length} books kandupidichaachu.</b> Modhal 5 paarunga:` + importRows.slice(0, 5).map(r => `<div class="row"><div><b>${esc(r.title)}</b><span class="m">${esc(r.author)}</span></div><div class="cat m">${esc(r.category)}</div><div class="m">${esc(r.ledger_info)}</div><div></div></div>`).join('') + `<div style="margin-top:14px"><button class="btn p" data-act="doImport">Import ${importRows.length} books</button></div>`
+    : '<div class="empty">Books edhuvum kidaikkala. Header row (Title, Author...) sari irukka nu paarunga.</div>';
+});
+actions.doImport = () => run(async () => {
+  let done = 0;
+  for (let i = 0; i < importRows.length; i += 200) {
+    await api('/api/books/bulk', 'POST', { books: importRows.slice(i, i + 200) });
+    done += Math.min(200, importRows.length - i);
+    $('#xlsPreview').innerHTML = `<b>Uploading... ${done} / ${importRows.length}</b>`;
+  }
+  $('#xlsPreview').innerHTML = `<b>${done} books add aagiduchu.</b>`; $('#xlsFile').value = ''; importRows = []; await loadBooks();
+});
 
 // ---- forms ----
 const submit = (sel, url, done, msg) => $(sel).onsubmit = e => { e.preventDefault(); run(async () => {
