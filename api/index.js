@@ -54,6 +54,21 @@ app.post('/api/books', auth('admin'), h(async (req, res) => {
   res.status(201).json(rows[0]);
 }));
 
+// bulk import from Excel (admin)
+app.post('/api/books/bulk', auth('admin'), h(async (req, res) => {
+  const rows = (req.body.books || []).filter(b => b.title && String(b.title).trim()).slice(0, 500).map(b => ({
+    title: String(b.title).trim(),
+    author: String(b.author || 'N/A').trim(),
+    category: String(b.category || 'General').trim(),
+    ledger_info: String(b.ledger_info || 'N/A').trim(),
+    quantity: parseInt(b.quantity) || 1,
+    barcode: 'KCC-' + Math.floor(100000 + Math.random() * 900000)
+  }));
+  if (!rows.length) return res.status(400).json({ error: 'No valid rows found.' });
+  await q(db.from('books').insert(rows));
+  res.json({ added: rows.length });
+}));
+
 app.delete('/api/books/:id', auth('admin'), h(async (req, res) => {
   await q(db.from('books').delete().eq('id', req.params.id));
   res.json({ ok: true });
