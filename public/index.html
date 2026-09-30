@@ -264,6 +264,13 @@ function matches(b, q) {
   return q.split(/\s+/).filter(Boolean).every(t => raw.includes(t) || (!hasTamil(t) && b._k.includes(phon(t))));
 }
 
+function waBtn(x) {
+  let n = String(x.phone || '').replace(/\D/g, '');
+  if (n.startsWith('0')) n = '94' + n.slice(1);
+  if (n.length < 10) return '<span class="m">No phone</span>';
+  const msg = `வணக்கம் ${x.borrower_name}, KCC நூலகத்தில் எடுத்த "${x.title}" புத்தகத்தை ${x.due_date} அன்று திருப்பித் தர வேண்டும். ${x.days} நாட்கள் தாமதமாகிவிட்டது (அபராதம் Rs. ${x.fine}). தயவுசெய்து விரைவில் திருப்பித் தரவும். நன்றி.\n\nHello ${x.borrower_name}, your library book "${x.title}" was due on ${x.due_date}. Please return it soon. Thank you.\n- Kilinochchi Central College Library`;
+  return `<a class="btn p" target="_blank" rel="noopener" href="https://wa.me/${n}?text=${encodeURIComponent(msg)}">WhatsApp</a>`;
+}
 const left = b => (b.quantity || 1) - (b.borrowed_count || 0);
 const chip = b => {
   const q = b.quantity || 1;
@@ -318,7 +325,7 @@ function loadTab(tab) {
   });
   if (tab === 'overdue') run(async () => {
     const f = await api('/api/fines');
-    $('#t-overdue').innerHTML = f.map(x => `<div class="row"><div><b>${esc(x.title)}</b><span class="m">${esc(x.borrower_name)} (${esc(x.borrower_id)})</span></div><div class="cat m">Due ${esc(x.due_date)}</div><div><span class="chip b">${x.days} days late</span></div><div><b>Rs. ${x.fine}</b></div></div>`).join('') || '<div class="empty">No overdue books.</div>';
+    $('#t-overdue').innerHTML = f.map(x => `<div class="row"><div><b>${esc(x.title)}</b><span class="m">${esc(x.borrower_name)} (${esc(x.borrower_id)})</span></div><div class="cat m">Due ${esc(x.due_date)}</div><div><span class="chip b">${x.days} days late</span></div><div><b>Rs. ${x.fine}</b><br>${waBtn(x)}</div></div>`).join('') || '<div class="empty">No overdue books.</div>';
   });
   if (tab === 'history') run(async () => {
     const h = await api('/api/history');
