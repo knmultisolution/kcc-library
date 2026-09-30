@@ -82,7 +82,7 @@ footer b{color:#fff}
   <h1>Find your next book at KCC</h1>
   <p>கற்று ஆய்ந்து ஒழுகு &nbsp;·&nbsp; Serving our students since 1927</p>
   <div class="search">
-    <input id="q" type="search" placeholder="Search by title, author or ledger number" aria-label="Search books">
+    <input id="q" type="search" placeholder="Search in Tamil or English, e.g. thirukkural" aria-label="Search books">
     <select id="cat" aria-label="Category"><option value="">All categories</option></select>
   </div>
 </div></section>
@@ -220,9 +220,37 @@ async function loadBooks() {
     renderBooks();
   });
 }
+// ---- Tamil / English (phonetic) search ----
+const T_V = {'அ':'a','ஆ':'aa','இ':'i','ஈ':'ii','உ':'u','ஊ':'uu','எ':'e','ஏ':'ee','ஐ':'ai','ஒ':'o','ஓ':'oo','ஔ':'au','ஃ':'h'};
+const T_S = {'ா':'aa','ி':'i','ீ':'ii','ு':'u','ூ':'uu','ெ':'e','ே':'ee','ை':'ai','ொ':'o','ோ':'oo','ௌ':'au'};
+const T_C = {'க':'k','ங':'ng','ச':'s','ஞ':'n','ட':'t','ண':'n','த':'th','ந':'n','ப':'p','ம':'m','ய':'y','ர':'r','ல':'l','வ':'v','ழ':'zh','ள':'l','ற':'r','ன':'n','ஜ':'j','ஷ':'sh','ஸ':'s','ஹ':'h'};
+function translit(str) {
+  let o = '';
+  for (let i = 0; i < str.length; i++) {
+    const ch = str[i];
+    if (T_C[ch]) {
+      o += T_C[ch]; const nx = str[i + 1];
+      if (T_S[nx]) { o += T_S[nx]; i++; } else if (nx === '்') i++; else o += 'a';
+    } else o += T_V[ch] || ch;
+  }
+  return o;
+}
+function phon(str) {
+  return str.toLowerCase()
+    .replace(/zh/g, 'l').replace(/sh|ch|ph|bh|dh|th|kh|gh/g, m => ({ sh: 's', ch: 's', ph: 'p', bh: 'p', dh: 't', th: 't', kh: 'k', gh: 'k' })[m])
+    .replace(/ng/g, 'n').replace(/[bg]/g, m => (m === 'b' ? 'p' : 'k')).replace(/[dcjzwq]/g, m => ({ d: 't', c: 'k', j: 's', z: 'l', w: 'v', q: 'k' })[m])
+    .replace(/aa/g, 'a').replace(/ee|ii/g, 'i').replace(/oo|uu/g, 'u').replace(/(.)\1+/g, '$1');
+}
+const hasTamil = s => /[஀-௿]/.test(s);
+function matches(b, q) {
+  const raw = [b.title, b.author, b.ledger_info, b.barcode].join(' ').toLowerCase();
+  if (!b._k) b._k = phon(translit(raw));
+  return q.split(/\s+/).filter(Boolean).every(t => raw.includes(t) || (!hasTamil(t) && b._k.includes(phon(t))));
+}
+
 function renderBooks() {
   const t = $('#q').value.toLowerCase(), c = $('#cat').value, admin = me && me.role === 'admin';
-  const rows = books.filter(b => (!c || b.category === c) && [b.title, b.author, b.ledger_info, b.barcode].join(' ').toLowerCase().includes(t));
+  const all = books.filter(b => (!c || b.category === c) && matches(b, t.trim())), rows = all.slice(0, 100);
   $('#list').innerHTML = rows.length ? rows.map(b => `
     <div class="row">
       <div><b>${esc(b.title)}</b><span class="m">${esc(b.author)}${b.ledger_info && b.ledger_info !== 'N/A' ? ' &nbsp;·&nbsp; Ledger ' + esc(b.ledger_info) : ''}</span></div>
@@ -233,7 +261,7 @@ function renderBooks() {
         ${admin ? `<button class="btn p" data-act="toggle" data-id="${b.id}">${b.status === 'Available' ? 'Issue' : 'Return'}</button>
                    <button class="btn d" data-act="delBook" data-id="${b.id}">Delete</button>` : ''}
       </div>
-    </div>`).join('') : '<div class="empty">No books match your search. Try a different title or author.</div>';
+    </div>`).join('') + (all.length > 100 ? `<div class="empty">Showing 100 of ${all.length} books. Type more letters to narrow your search.</div>` : '') : '<div class="empty">No books match your search. Try a different spelling, or search in Tamil or English.</div>';
 }
 $('#q').oninput = $('#cat').onchange = renderBooks;
 
