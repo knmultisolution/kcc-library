@@ -177,9 +177,11 @@ app.get('/api/stats', auth('admin'), h(async (_req, res) => {
 // ---- overdue fines ----
 app.get('/api/fines', auth('admin'), h(async (_req, res) => {
   const loans = await q(db.from('history').select('*').is('return_date', null).lt('due_date', today()).order('due_date'));
+  const ph = {};
+  (await q(db.from('members').select('id,phone'))).forEach(m => ph[m.id.toLowerCase()] = m.phone);
   res.json(loans.map(l => {
     const days = Math.ceil((new Date(today()) - new Date(l.due_date)) / 864e5);
-    return { id: l.id, title: l.book_title, borrower_name: l.borrower_name, borrower_id: l.borrower_id, due_date: l.due_date, days, fine: days * FINE_PER_DAY };
+    return { id: l.id, title: l.book_title, borrower_name: l.borrower_name, borrower_id: l.borrower_id, due_date: l.due_date, days, fine: days * FINE_PER_DAY, phone: ph[(l.borrower_id || '').toLowerCase()] || '' };
   }));
 }));
 
