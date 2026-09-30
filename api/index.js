@@ -26,6 +26,16 @@ const auth = role => (req, res, next) => {
 };
 const h = fn => (req, res) => fn(req, res).catch(e => res.status(500).json({ error: e.message }));
 const q = async p => { const { data, error } = await p; if (error) throw new Error(error.message); return data; };
+// Supabase returns max 1000 rows per request, so read in pages
+const fetchAll = async build => {
+  let out = [], from = 0;
+  for (;;) {
+    const rows = await q(build().range(from, from + 999));
+    out = out.concat(rows);
+    if (rows.length < 1000) return out;
+    from += 1000;
+  }
+};
 const today = () => new Date().toISOString().slice(0, 10);
 const addDays = n => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
 
@@ -42,7 +52,7 @@ app.post('/api/login', h(async (req, res) => {
 }));
 
 // ---- books ----
-app.get('/api/books', h(async (_req, res) => res.json(await q(db.from('books').select('*').order('id')))));
+app.get('/api/books', h(async (_req, res) => res.json(await fetchAll(() => db.from('books').select('*').order('id')))));
 
 app.post('/api/books', auth('admin'), h(async (req, res) => {
   const { title, author, category, ledger_info, quantity, pdf_url, barcode } = req.body;
@@ -74,20 +84,37 @@ app.delete('/api/books/:id', auth('admin'), h(async (req, res) => {
   res.json({ ok: true });
 }));
 
-// issue or return
-app.post('/api/books/:id/toggle', auth('admin'), h(async (req, res) => {
+// ---- issue / return (copy by copy) ----
+const sync = async id => {
+  const [b] = await q(db.from('books').select('quantity').eq('id', id));
+  if (!b) return;
+  const { count, error } = await db.from('history').select('*', { count: 'exact', head: true }).eq('book_id', id).is('return_date', null);
+  if (error) throw new Error(error.message);
+  const n = count || 0;
+  await q(db.from('books').update({ borrowed_count: n, status: n >= (b.quantity || 1) ? 'Borrowed' : 'Available' }).eq('id', id));
+};
+
+app.post('/api/books/:id/issue', auth('admin'), h(async (req, res) => {
   const [book] = await q(db.from('books').select('*').eq('id', req.params.id));
   if (!book) return res.status(404).json({ error: 'Book not found.' });
-  if (book.status === 'Available') {
-    const [m] = await q(db.from('members').select('*').ilike('id', req.body.borrowerId || ''));
-    if (!m) return res.status(400).json({ error: 'No member found with that ID.' });
-    const upd = { status: 'Borrowed', borrower_name: m.name, borrower_id: m.id, issue_date: today(), due_date: addDays(14) };
-    await q(db.from('books').update(upd).eq('id', book.id));
-    await q(db.from('history').insert({ book_id: book.id, book_title: book.title, borrower_name: m.name, borrower_id: m.id, issue_date: upd.issue_date }));
-  } else {
-    await q(db.from('history').update({ return_date: today() }).eq('book_id', book.id).is('return_date', null));
-    await q(db.from('books').update({ status: 'Available', borrower_name: null, borrower_id: null, issue_date: null, due_date: null }).eq('id', book.id));
-  }
+  if ((book.borrowed_count || 0) >= (book.quantity || 1)) return res.status(400).json({ error: 'All copies of this book are already borrowed.' });
+  const [m] = await q(db.from('members').select('*').ilike('id', req.body.borrowerId || ''));
+  if (!m) return res.status(400).json({ error: 'No member found with that ID.' });
+  const open = await q(db.from('history').select('id').eq('book_id', book.id).eq('borrower_id', m.id).is('return_date', null));
+  if (open.length) return res.status(400).json({ error: 'This member already has a copy of this book.' });
+  await q(db.from('history').insert({ book_id: book.id, book_title: book.title, borrower_name: m.name, borrower_id: m.id, issue_date: today(), due_date: addDays(14) }));
+  await sync(book.id);
+  res.json({ ok: true });
+}));
+
+app.get('/api/books/:id/loans', auth('admin'), h(async (req, res) =>
+  res.json(await q(db.from('history').select('*').eq('book_id', req.params.id).is('return_date', null).order('id')))));
+
+app.post('/api/loans/:id/return', auth('admin'), h(async (req, res) => {
+  const [l] = await q(db.from('history').select('*').eq('id', req.params.id));
+  if (!l || l.return_date) return res.status(404).json({ error: 'Loan not found.' });
+  await q(db.from('history').update({ return_date: today() }).eq('id', l.id));
+  await sync(l.book_id);
   res.json({ ok: true });
 }));
 
@@ -131,12 +158,28 @@ app.delete('/api/requests/:id', auth('admin'), h(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// ---- dashboard numbers ----
+app.get('/api/stats', auth('admin'), h(async (_req, res) => {
+  const cnt = async p => { const { count, error } = await p; if (error) throw new Error(error.message); return count || 0; };
+  const head = t => db.from(t).select('*', { count: 'exact', head: true });
+  const [titles, borrowed, overdue, members, requests, qty] = await Promise.all([
+    cnt(head('books')),
+    cnt(head('history').is('return_date', null)),
+    cnt(head('history').is('return_date', null).lt('due_date', today())),
+    cnt(head('members')),
+    cnt(head('requests')),
+    fetchAll(() => db.from('books').select('quantity').order('id'))
+  ]);
+  const copies = qty.reduce((a, b) => a + (b.quantity || 1), 0);
+  res.json({ titles, copies, borrowed, available: copies - borrowed, overdue, members, requests });
+}));
+
 // ---- overdue fines ----
 app.get('/api/fines', auth('admin'), h(async (_req, res) => {
-  const books = await q(db.from('books').select('*').eq('status', 'Borrowed').lt('due_date', today()));
-  res.json(books.map(b => {
-    const days = Math.ceil((new Date(today()) - new Date(b.due_date)) / 864e5);
-    return { id: b.id, title: b.title, borrower_name: b.borrower_name, borrower_id: b.borrower_id, due_date: b.due_date, days, fine: days * FINE_PER_DAY };
+  const loans = await q(db.from('history').select('*').is('return_date', null).lt('due_date', today()).order('due_date'));
+  res.json(loans.map(l => {
+    const days = Math.ceil((new Date(today()) - new Date(l.due_date)) / 864e5);
+    return { id: l.id, title: l.book_title, borrower_name: l.borrower_name, borrower_id: l.borrower_id, due_date: l.due_date, days, fine: days * FINE_PER_DAY };
   }));
 }));
 
