@@ -42,6 +42,7 @@ const checkPw = (p, hs) => {
   return !!hx && crypto.timingSafeEqual(Buffer.from(hx, 'hex'), crypto.scryptSync(p, salt, 32));
 };
 const today = () => new Date().toISOString().slice(0, 10);
+const lateDays = d => d ? Math.max(0, Math.ceil((new Date(today()) - new Date(d)) / 864e5)) : 0;
 const addDays = n => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
 
 // ---- auth ----
@@ -118,7 +119,8 @@ app.get('/api/books/:id/loans', auth('admin'), h(async (req, res) =>
 app.post('/api/loans/:id/return', auth('admin'), h(async (req, res) => {
   const [l] = await q(db.from('history').select('*').eq('id', req.params.id));
   if (!l || l.return_date) return res.status(404).json({ error: 'Loan not found.' });
-  await q(db.from('history').update({ return_date: today() }).eq('id', l.id));
+  const fine = lateDays(l.due_date) * FINE_PER_DAY;
+  await q(db.from('history').update({ return_date: today(), fine_amount: fine, fine_paid: fine === 0 || !!req.body.finePaid }).eq('id', l.id));
   await sync(l.book_id);
   res.json({ ok: true });
 }));
@@ -190,6 +192,45 @@ app.post('/api/password', auth(), h(async (req, res) => {
   const ok = m && (m.pw_hash ? checkPw(current, m.pw_hash) : current.toLowerCase() === m.id.toLowerCase());
   if (!ok) return res.status(400).json({ error: 'Current password is wrong.' });
   await q(db.from('members').update({ pw_hash: hashPw(next) }).eq('id', m.id));
+  res.json({ ok: true });
+}));
+
+// ---- members Excel import, my books, renew, fines paid ----
+app.post('/api/members/bulk', auth('admin'), h(async (req, res) => {
+  const rows = (req.body.members || []).filter(m => m.id && m.name).slice(0, 500).map(m => ({
+    id: String(m.id).trim(), name: String(m.name).trim(), email: String(m.email || '').trim(),
+    phone: String(m.phone || '').replace(/\s/g, ''), role: ['Student', 'Teacher', 'Librarian'].includes(m.role) ? m.role : 'Student'
+  }));
+  if (!rows.length) return res.status(400).json({ error: 'No valid rows. Each row needs a Member ID and a Name.' });
+  await q(db.from('members').upsert(rows, { onConflict: 'id' }));
+  res.json({ added: rows.length });
+}));
+
+app.get('/api/my', auth(), h(async (req, res) => {
+  if (!req.user.id) return res.json({ open: [], past: [] });
+  const rows = await q(db.from('history').select('*').eq('borrower_id', req.user.id).order('id', { ascending: false }).limit(100));
+  const open = rows.filter(r => !r.return_date).map(r => ({ ...r, late: lateDays(r.due_date), fine: lateDays(r.due_date) * FINE_PER_DAY }));
+  res.json({ open, past: rows.filter(r => r.return_date).slice(0, 20) });
+}));
+
+app.post('/api/loans/:id/renew', auth(), h(async (req, res) => {
+  const [l] = await q(db.from('history').select('*').eq('id', req.params.id));
+  if (!l || l.return_date) return res.status(404).json({ error: 'Loan not found.' });
+  const admin = req.user.role === 'admin';
+  if (!admin && l.borrower_id !== req.user.id) return res.status(403).json({ error: 'Not your book.' });
+  if (!admin && (l.renewals || 0) >= 2) return res.status(400).json({ error: 'A book can be renewed only 2 times.' });
+  if (!admin && lateDays(l.due_date) > 0) return res.status(400).json({ error: 'This book is overdue. Please return it to the library.' });
+  const base = l.due_date && l.due_date > today() ? l.due_date : today();
+  const due = new Date(new Date(base).getTime() + 14 * 864e5).toISOString().slice(0, 10);
+  await q(db.from('history').update({ due_date: due, renewals: (l.renewals || 0) + 1 }).eq('id', l.id));
+  res.json({ ok: true, due_date: due });
+}));
+
+app.get('/api/fines/unpaid', auth('admin'), h(async (_req, res) =>
+  res.json(await q(db.from('history').select('*').gt('fine_amount', 0).eq('fine_paid', false).order('id', { ascending: false })))));
+
+app.post('/api/loans/:id/paid', auth('admin'), h(async (req, res) => {
+  await q(db.from('history').update({ fine_paid: true }).eq('id', req.params.id));
   res.json({ ok: true });
 }));
 
