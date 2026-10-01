@@ -8,6 +8,19 @@ const FINE_PER_DAY = 20;
 const app = express();
 app.use(express.json());
 
+// activity log: every successful change is recorded
+app.use((req, res, next) => {
+  if (req.method !== 'GET' && req.path !== '/api/login') {
+    res.on('finish', () => {
+      if (res.statusCode >= 400) return;
+      const u = verify((req.headers.authorization || '').replace('Bearer ', ''));
+      const b = req.body || {};
+      db.from('audit').insert({ who: u ? u.name : '?', action: req.method + ' ' + req.path, detail: String(b.title || b.name || b.borrowerId || '').slice(0, 80) }).then(() => {}, () => {});
+    });
+  }
+  next();
+});
+
 // ---- helpers ----
 const mac = b => crypto.createHmac('sha256', SECRET).update(b).digest('base64url');
 const sign = p => { const b = Buffer.from(JSON.stringify(p)).toString('base64url'); return `${b}.${mac(b)}`; };
@@ -109,6 +122,7 @@ app.post('/api/books/:id/issue', auth('admin'), h(async (req, res) => {
   const open = await q(db.from('history').select('id').eq('book_id', book.id).eq('borrower_id', m.id).is('return_date', null));
   if (open.length) return res.status(400).json({ error: 'This member already has a copy of this book.' });
   await q(db.from('history').insert({ book_id: book.id, book_title: book.title, borrower_name: m.name, borrower_id: m.id, issue_date: today(), due_date: addDays(14) }));
+  await db.from('reservations').update({ status: 'Fulfilled' }).eq('book_id', book.id).eq('member_id', m.id).eq('status', 'Waiting');
   await sync(book.id);
   res.json({ ok: true });
 }));
@@ -210,7 +224,8 @@ app.get('/api/my', auth(), h(async (req, res) => {
   if (!req.user.id) return res.json({ open: [], past: [] });
   const rows = await q(db.from('history').select('*').eq('borrower_id', req.user.id).order('id', { ascending: false }).limit(100));
   const open = rows.filter(r => !r.return_date).map(r => ({ ...r, late: lateDays(r.due_date), fine: lateDays(r.due_date) * FINE_PER_DAY }));
-  res.json({ open, past: rows.filter(r => r.return_date).slice(0, 20) });
+  const reservations = await q(db.from('reservations').select('*').eq('member_id', req.user.id).eq('status', 'Waiting'));
+  res.json({ open, past: rows.filter(r => r.return_date).slice(0, 20), reservations });
 }));
 
 app.post('/api/loans/:id/renew', auth(), h(async (req, res) => {
@@ -233,6 +248,69 @@ app.post('/api/loans/:id/paid', auth('admin'), h(async (req, res) => {
   await q(db.from('history').update({ fine_paid: true }).eq('id', req.params.id));
   res.json({ ok: true });
 }));
+
+// ---- reserve, scan, reports, activity ----
+app.post('/api/books/:id/reserve', auth(), h(async (req, res) => {
+  if (!req.user.id) return res.status(400).json({ error: 'Only members can reserve books.' });
+  const [b] = await q(db.from('books').select('*').eq('id', req.params.id));
+  if (!b) return res.status(404).json({ error: 'Book not found.' });
+  if ((b.borrowed_count || 0) < (b.quantity || 1)) return res.status(400).json({ error: 'A copy is available now. Please ask the librarian.' });
+  const dup = await q(db.from('reservations').select('id').eq('book_id', b.id).eq('member_id', req.user.id).eq('status', 'Waiting'));
+  if (dup.length) return res.status(400).json({ error: 'You already reserved this book.' });
+  const held = await q(db.from('history').select('id').eq('book_id', b.id).eq('borrower_id', req.user.id).is('return_date', null));
+  if (held.length) return res.status(400).json({ error: 'You already have this book.' });
+  await q(db.from('reservations').insert({ book_id: b.id, book_title: b.title, member_id: req.user.id, member_name: req.user.name }));
+  res.json({ ok: true });
+}));
+
+app.get('/api/reservations', auth('admin'), h(async (_req, res) => {
+  const rows = await q(db.from('reservations').select('*').eq('status', 'Waiting').order('id'));
+  const ph = {}; (await q(db.from('members').select('id,phone'))).forEach(m => ph[m.id] = m.phone);
+  res.json(rows.map(r => ({ ...r, phone: ph[r.member_id] || '' })));
+}));
+
+app.delete('/api/reservations/:id', auth(), h(async (req, res) => {
+  const [r] = await q(db.from('reservations').select('*').eq('id', req.params.id));
+  if (!r) return res.status(404).json({ error: 'Reservation not found.' });
+  if (req.user.role !== 'admin' && r.member_id !== req.user.id) return res.status(403).json({ error: 'Not your reservation.' });
+  await q(db.from('reservations').update({ status: 'Cancelled' }).eq('id', r.id));
+  res.json({ ok: true });
+}));
+
+// one scan: returns the book if this member has it, otherwise issues it
+app.post('/api/books/:id/scan', auth('admin'), h(async (req, res) => {
+  const [book] = await q(db.from('books').select('*').eq('id', req.params.id));
+  if (!book) return res.status(404).json({ error: 'Book not found.' });
+  const [m] = await q(db.from('members').select('*').ilike('id', req.body.borrowerId || ''));
+  if (!m) return res.status(400).json({ error: 'No member found with that ID.' });
+  const [loan] = await q(db.from('history').select('*').eq('book_id', book.id).eq('borrower_id', m.id).is('return_date', null));
+  if (loan) {
+    const fine = lateDays(loan.due_date) * FINE_PER_DAY;
+    await q(db.from('history').update({ return_date: today(), fine_amount: fine, fine_paid: fine === 0 }).eq('id', loan.id));
+    await sync(book.id);
+    return res.json({ action: 'returned', name: m.name, fine });
+  }
+  if ((book.borrowed_count || 0) >= (book.quantity || 1)) return res.status(400).json({ error: 'All copies of this book are borrowed.' });
+  const due = addDays(14);
+  await q(db.from('history').insert({ book_id: book.id, book_title: book.title, borrower_name: m.name, borrower_id: m.id, issue_date: today(), due_date: due }));
+  await db.from('reservations').update({ status: 'Fulfilled' }).eq('book_id', book.id).eq('member_id', m.id).eq('status', 'Waiting');
+  await sync(book.id);
+  res.json({ action: 'issued', name: m.name, due });
+}));
+
+app.get('/api/reports', auth('admin'), h(async (_req, res) => {
+  const rows = await fetchAll(() => db.from('history').select('book_title,borrower_name,borrower_id,issue_date,fine_amount,fine_paid').order('id'));
+  const top = key => { const m = {}; rows.forEach(r => { const k = key(r); if (k) m[k] = (m[k] || 0) + 1; }); return Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([name, count]) => ({ name, count })); };
+  const months = {}; rows.forEach(r => { const k = (r.issue_date || '').slice(0, 7); if (k) months[k] = (months[k] || 0) + 1; });
+  res.json({
+    loans: rows.length, collected: rows.filter(r => r.fine_paid).reduce((a, r) => a + (r.fine_amount || 0), 0),
+    topBooks: top(r => r.book_title), topReaders: top(r => r.borrower_name ? `${r.borrower_name} (${r.borrower_id})` : ''),
+    monthly: Object.entries(months).sort().slice(-6).map(([name, count]) => ({ name, count }))
+  });
+}));
+
+app.get('/api/audit', auth('admin'), h(async (_req, res) =>
+  res.json(await q(db.from('audit').select('*').order('id', { ascending: false }).limit(200)))));
 
 // ---- dashboard numbers ----
 app.get('/api/stats', auth('admin'), h(async (_req, res) => {
