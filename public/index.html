@@ -95,6 +95,7 @@ footer b{color:#fff}
   <div class="name">Kilinochchi Central College<small>School Library</small></div>
   <nav>
     <button class="nb on" data-view="catalog">Catalogue</button>
+    <button class="nb" data-view="papers">Past papers</button>
     <button class="nb" data-view="my" id="navMy" hidden>My books</button>
     <button class="nb" data-view="request" id="navReq" hidden>Request a book</button>
     <button class="nb" data-view="admin" id="navAdmin" hidden>Librarian desk</button>
@@ -115,7 +116,13 @@ footer b{color:#fff}
 <main>
   <section id="v-catalog" class="panel"><h2>Catalogue</h2><div class="pub" id="pubStats"></div><div id="list"></div></section>
 
-  <section id="v-my" class="panel" hidden><h2>My books</h2><div id="myList"></div><h2 style="margin-top:26px">Returned</h2><div id="myPast"></div><h2 style="margin-top:26px">Reserved</h2><div id="myResv"></div></section>
+  <section id="v-papers" class="panel" hidden>
+    <h2>Past papers and notes</h2>
+    <div class="g2" style="margin-bottom:12px"><label>Search<input id="pq" type="search" placeholder="Subject, year or title"></label><label>Grade / Exam<select id="pg"></select></label><label>Type<select id="pk"><option value="">All types</option><option>Past paper</option><option>Marking scheme</option><option>Notes</option></select></label></div>
+    <div id="paperList"></div>
+  </section>
+
+  <section id="v-my" class="panel" hidden><h2>My books</h2><p id="myLimit" style="color:var(--mute);margin-top:-8px"></p><div id="myList"></div><h2 style="margin-top:26px">Returned</h2><div id="myPast"></div><h2 style="margin-top:26px">Reserved</h2><div id="myResv"></div></section>
 
   <section id="v-request" class="panel" hidden>
     <h2>Request a book</h2>
@@ -142,6 +149,7 @@ footer b{color:#fff}
       <button class="tab" data-tab="reports">Reports</button>
       <button class="tab" data-tab="audit">Activity</button>
       <button class="tab" data-tab="print">Print cards</button>
+      <button class="tab" data-tab="papers">Papers</button>
     </div>
     <div id="t-dash"><div class="stats" id="stats"></div>
       <div style="margin-top:18px"><button class="btn p" data-act="backup">Download backup (Excel)</button></div></div>
@@ -180,6 +188,19 @@ footer b{color:#fff}
       </div>
       <div style="margin:12px 0"><button class="btn" data-act="camBook">Scan book with camera</button> <button class="btn" data-act="camMem">Scan member ID with camera</button></div>
       <div id="scInfo"></div>
+    </div>
+    <div id="t-papers" hidden>
+      <form class="g" id="paperForm">
+        <label>Title<input name="title" required></label>
+        <label>Grade / Exam<select name="grade"></select></label>
+        <label>Subject<input name="subject"></label>
+        <label>Year<input name="year"></label>
+        <label>Type<select name="kind"><option>Past paper</option><option>Marking scheme</option><option>Notes</option></select></label>
+        <label>PDF file<input type="file" name="file" accept="application/pdf"></label>
+        <label>or PDF link<input name="pdf_url" type="url"></label>
+        <div style="align-self:end"><button class="btn p">Add</button></div>
+      </form>
+      <div id="paperAdmin" style="margin-top:18px"></div>
     </div>
     <div id="t-print" hidden>
       <h3 style="margin-top:0">Member ID cards</h3>
@@ -267,9 +288,10 @@ const run = async (fn, ok) => { try { await fn(); if (ok) toast(ok); } catch (e)
 
 // ---- views ----
 function show(view) {
-  ['catalog', 'my', 'request', 'admin'].forEach(v => $('#v-' + v).hidden = v !== view);
+  ['catalog', 'papers', 'my', 'request', 'admin'].forEach(v => $('#v-' + v).hidden = v !== view);
   $$('.nb[data-view]').forEach(b => b.classList.toggle('on', b.dataset.view === view));
   if (view === 'my') loadMy();
+  if (view === 'papers') loadPapers();
   if (view === 'admin') loadTab(document.querySelector('.tab.on').dataset.tab);
 }
 $$('.nb[data-view]').forEach(b => b.onclick = () => show(b.dataset.view));
@@ -345,7 +367,8 @@ const lateOf = d => d ? Math.max(0, Math.ceil((new Date(new Date().toISOString()
 function loadMy() {
   run(async () => {
     const d = await api('/api/my');
-    $('#myList').innerHTML = d.open.map(l => `<div class="row" style="grid-template-columns:2fr 1.5fr auto"><div><b>${esc(l.book_title)}</b><span class="m">Issued ${esc(l.issue_date)}${l.renewals ? ' · renewed ' + l.renewals + ' time(s)' : ''}</span></div><div>${l.late > 0 ? `<span class="chip b">${l.late} days late · Rs. ${l.fine}</span>` : `<span class="chip a">Due ${esc(l.due_date)}</span>`}</div><div class="acts">${l.late > 0 || l.renewals >= 2 ? '' : `<button class="btn p" data-act="renew" data-id="${l.id}">Renew 14 days</button>`}</div></div>`).join('') || '<div class="empty">You have no borrowed books right now.</div>';
+    if (d.limit) $('#myLimit').textContent = `You can borrow up to ${d.limit.max} books, ${d.limit.days} days each.`;
+    $('#myList').innerHTML = d.open.map(l => `<div class="row" style="grid-template-columns:2fr 1.5fr auto"><div><b>${esc(l.book_title)}</b><span class="m">Issued ${esc(l.issue_date)}${l.renewals ? ' · renewed ' + l.renewals + ' time(s)' : ''}</span></div><div>${l.late > 0 ? `<span class="chip b">${l.late} days late · Rs. ${l.fine}</span>` : `<span class="chip a">Due ${esc(l.due_date)}</span>`}</div><div class="acts">${l.late > 0 || l.renewals >= 2 ? '' : `<button class="btn p" data-act="renew" data-id="${l.id}">Renew</button>`}</div></div>`).join('') || '<div class="empty">You have no borrowed books right now.</div>';
     $('#myPast').innerHTML = d.past.map(l => `<div class="row" style="grid-template-columns:2fr 1.5fr auto"><div><b>${esc(l.book_title)}</b></div><div class="m">Returned ${esc(l.return_date)}</div><div>${l.fine_amount > 0 ? (l.fine_paid ? '<span class="chip a">Fine paid</span>' : `<span class="chip b">Fine Rs. ${l.fine_amount}</span>`) : ''}</div></div>`).join('') || '<div class="empty">No returned books yet.</div>';
     $('#myResv').innerHTML = (d.reservations || []).map(r => `<div class="row" style="grid-template-columns:1fr auto"><div><b>${esc(r.book_title)}</b><span class="m">Waiting since ${esc(String(r.created_at).slice(0, 10))}</span></div><div><button class="btn d" data-act="cancelResv" data-id="${r.id}">Cancel</button></div></div>`).join('') || '<div class="empty">No reservations.</div>';
   });
@@ -401,12 +424,13 @@ $$('.tab').forEach(b => b.onclick = () => {
   $$('.tab').forEach(x => x.classList.toggle('on', x === b)); loadTab(b.dataset.tab);
 });
 function loadTab(tab) {
-  ['dash', 'add', 'members', 'requests', 'overdue', 'history', 'import', 'scan', 'resv', 'reports', 'audit', 'print'].forEach(t => $('#t-' + t).hidden = t !== tab);
+  ['dash', 'add', 'members', 'requests', 'overdue', 'history', 'import', 'scan', 'resv', 'reports', 'audit', 'print', 'papers'].forEach(t => $('#t-' + t).hidden = t !== tab);
   if (tab === 'dash') run(async () => {
     const d = await api('/api/stats'), n = x => Number(x).toLocaleString();
     const card = (v, l, c = '') => `<div class="stat ${c}"><b>${n(v)}</b><span>${l}</span></div>`;
     $('#stats').innerHTML = card(d.copies, 'Total books') + card(d.titles, 'Book titles') + card(d.available, 'Available books', 'ok') + card(d.borrowed, 'Borrowed books', 'gate') + card(d.overdue, 'Overdue books', 'warn') + card(d.members, 'Members') + card(d.requests, 'Pending requests');
   });
+  if (tab === 'papers') loadPapers();
   if (tab === 'print') $('#plCat').innerHTML = '<option value="">All categories</option>' + [...new Set(books.map(b => b.category))].sort().map(c => `<option>${esc(c)}</option>`).join('');
   if (tab === 'scan') setTimeout(() => $('#scBook').focus(), 50);
   if (tab === 'resv') run(async () => {
@@ -455,7 +479,7 @@ const actions = {
     const b = books.find(x => x.id == id), borrowerId = await askMember(b);
     if (!borrowerId) return;
     await api(`/api/books/${id}/issue`, 'POST', { borrowerId }); await loadBooks();
-  }, 'Book issued for 14 days.'),
+  }, 'Book issued.'),
   returnBook: id => run(async () => {
     curLoans = await api(`/api/books/${id}/loans`);
     $('#loanTitle').textContent = books.find(x => x.id == id).title;
@@ -470,8 +494,8 @@ const actions = {
     const finePaid = fine > 0 && confirm(`Fine: Rs. ${fine} (${lateOf(l.due_date)} days late).\n\nOK = fine collected\nCancel = not paid yet`);
     await api(`/api/loans/${id}/return`, 'POST', { finePaid }); $('#loanDlg').close(); await loadBooks();
   }, 'Book returned.'),
-  renewLoan: id => run(async () => { await api(`/api/loans/${id}/renew`, 'POST'); $('#loanDlg').close(); await loadBooks(); }, 'Renewed for 14 more days.'),
-  renew: id => run(async () => { await api(`/api/loans/${id}/renew`, 'POST'); loadMy(); }, 'Renewed for 14 more days.'),
+  renewLoan: id => run(async () => { await api(`/api/loans/${id}/renew`, 'POST'); $('#loanDlg').close(); await loadBooks(); }, 'Renewed.'),
+  renew: id => run(async () => { await api(`/api/loans/${id}/renew`, 'POST'); loadMy(); }, 'Renewed.'),
   paid: id => run(async () => { await api(`/api/loans/${id}/paid`, 'POST'); loadTab('overdue'); }, 'Fine marked as paid.'),
   editBook: id => openEdit('Edit book', [{ k: 'title', l: 'Title', r: 1 }, { k: 'author', l: 'Author' }, { k: 'category', l: 'Category' }, { k: 'ledger_info', l: 'Ledger No' }, { k: 'quantity', l: 'Copies', t: 'number' }, { k: 'pdf_url', l: 'PDF link' }],
     books.find(x => x.id == id), async v => { await api('/api/books/' + id, 'PUT', v); await loadBooks(); }),
@@ -562,6 +586,40 @@ actions.doMemImport = () => run(async () => {
   for (let i = 0; i < memRows.length; i += 200) await api('/api/members/bulk', 'POST', { members: memRows.slice(i, i + 200) });
   $('#memPreview').innerHTML = `<b>${memRows.length} members saved.</b>`; $('#memFile').value = ''; memRows = []; loadTab('members');
 });
+
+// ---- past papers ----
+const GRADES = ['Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11 (O/L)', 'Grade 12', 'Grade 13 (A/L)', 'Other'];
+$('#pg').innerHTML = '<option value="">All grades</option>' + GRADES.map(g => `<option>${g}</option>`).join('');
+$('#paperForm [name=grade]').innerHTML = GRADES.map(g => `<option>${g}</option>`).join('');
+let papers = [];
+async function loadPapers() { await run(async () => { papers = await api('/api/papers'); renderPapers(); }); }
+function renderPapers() {
+  const t = $('#pq').value.toLowerCase(), g = $('#pg').value, k = $('#pk').value, admin = me && me.role === 'admin';
+  const row = p => `<div class="row" style="grid-template-columns:2.4fr 1.2fr 1fr auto"><div><b>${esc(p.title)}</b><span class="m">${esc(p.subject || '')}${p.year ? ' &nbsp;·&nbsp; ' + esc(p.year) : ''}</span></div><div class="cat m">${esc(p.grade || '')}</div><div class="m">${esc(p.kind || '')}</div><div class="acts"><a class="btn p" target="_blank" rel="noopener" href="${esc(p.pdf_url)}">Open PDF</a>${admin ? `<button class="btn d" data-act="delPaper" data-id="${p.id}">Delete</button>` : ''}</div></div>`;
+  const rows = papers.filter(p => (!g || p.grade === g) && (!k || p.kind === k) && [p.title, p.subject, p.year, p.grade].join(' ').toLowerCase().includes(t));
+  $('#paperList').innerHTML = rows.slice(0, 200).map(row).join('') || '<div class="empty">No papers found yet.</div>';
+  $('#paperAdmin').innerHTML = papers.slice(0, 50).map(row).join('');
+}
+$('#pq').oninput = $('#pg').onchange = $('#pk').onchange = renderPapers;
+actions.delPaper = id => confirm('Delete this paper?') && run(async () => { await api('/api/papers/' + id, 'DELETE'); await loadPapers(); }, 'Deleted.');
+async function putPdf(f) {
+  const info = await api('/api/upload-url', 'POST', { filename: f.name });
+  if (!info.anon) throw new Error('Add SUPABASE_ANON_KEY in the Vercel settings first.');
+  const sb = supabase.createClient(info.url, info.anon);
+  const { error } = await sb.storage.from('ebooks').uploadToSignedUrl(info.path, info.token, f, { contentType: 'application/pdf' });
+  if (error) throw new Error(error.message);
+  return info.publicUrl;
+}
+$('#paperForm').onsubmit = e => {
+  e.preventDefault();
+  run(async () => {
+    const fd = new FormData(e.target), file = fd.get('file');
+    let url = fd.get('pdf_url');
+    if (file && file.size) { toast('Uploading PDF, please wait...'); url = await putPdf(file); }
+    await api('/api/papers', 'POST', { title: fd.get('title'), grade: fd.get('grade'), subject: fd.get('subject'), year: fd.get('year'), kind: fd.get('kind'), pdf_url: url });
+    e.target.reset(); await loadPapers();
+  }, 'Added.');
+};
 
 // ---- printing and PDF upload ----
 function doPrint(html, cls) {
