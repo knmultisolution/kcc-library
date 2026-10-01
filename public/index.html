@@ -80,6 +80,7 @@ footer b{color:#fff}
     <button class="nb on" data-view="catalog">Catalogue</button>
     <button class="nb" data-view="request" id="navReq" hidden>Request a book</button>
     <button class="nb" data-view="admin" id="navAdmin" hidden>Librarian desk</button>
+    <button class="nb" id="navPw" hidden>Password</button>
     <button class="nb cta" id="authBtn">Sign in</button>
   </nav>
 </div></header>
@@ -117,7 +118,8 @@ footer b{color:#fff}
       <button class="tab" data-tab="history">History</button>
       <button class="tab" data-tab="import">Import Excel</button>
     </div>
-    <div id="t-dash"><div class="stats" id="stats"></div></div>
+    <div id="t-dash"><div class="stats" id="stats"></div>
+      <div style="margin-top:18px"><button class="btn p" data-act="backup">Download backup (Excel)</button></div></div>
     <div id="t-add" hidden>
       <form class="g" id="bookForm">
         <label>Title<input name="title" required></label>
@@ -135,7 +137,7 @@ footer b{color:#fff}
         <label>Full name<input name="name" required></label>
         <label>Email<input name="email" type="email"></label>
         <label>Phone<input name="phone"></label>
-        <label>Role<select name="role"><option>Student</option><option>Teacher</option></select></label>
+        <label>Role<select name="role"><option>Student</option><option>Teacher</option><option>Librarian</option></select></label>
         <div style="align-self:end"><button class="btn p">Add member</button></div>
       </form>
       <div id="memList"></div>
@@ -155,7 +157,7 @@ footer b{color:#fff}
 
 <dialog id="loginDlg">
   <form method="dialog" id="loginForm">
-    <h3>Sign in</h3><p>Use your name and member ID.</p>
+    <h3>Sign in</h3><p>Name or member ID, and your password. First time, your password is your member ID.</p>
     <label>Name or member ID<input name="username" autocomplete="username" required></label>
     <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
     <div class="acts"><button type="button" class="btn" id="loginCancel">Cancel</button><button class="btn p">Sign in</button></div>
@@ -168,6 +170,11 @@ footer b{color:#fff}
     <label>Member ID<input id="askInput" required></label>
     <div class="acts"><button type="button" class="btn" id="askCancel">Cancel</button><button class="btn p">Issue book</button></div>
   </form>
+</dialog>
+
+<dialog id="editDlg">
+  <form method="dialog" id="editForm"><h3 id="editTitle"></h3><div id="editFields"></div>
+    <div class="acts"><button type="button" class="btn" id="editCancel">Cancel</button><button class="btn p">Save</button></div></form>
 </dialog>
 
 <dialog id="loanDlg">
@@ -210,6 +217,7 @@ $$('.nb[data-view]').forEach(b => b.onclick = () => show(b.dataset.view));
 function refreshChrome() {
   $('#authBtn').textContent = me ? 'Sign out (' + me.name.split(' ')[0] + ')' : 'Sign in';
   $('#navReq').hidden = !me;
+  $('#navPw').hidden = !(me && me.memberId);
   $('#navAdmin').hidden = !(me && me.role === 'admin');
   if (!me || (me.role !== 'admin' && !$('#v-admin').hidden)) show('catalog');
   renderBooks();
@@ -271,6 +279,17 @@ function waBtn(x) {
   const msg = `வணக்கம் ${x.borrower_name}, KCC நூலகத்தில் எடுத்த "${x.title}" புத்தகத்தை ${x.due_date} அன்று திருப்பித் தர வேண்டும். ${x.days} நாட்கள் தாமதமாகிவிட்டது (அபராதம் Rs. ${x.fine}). தயவுசெய்து விரைவில் திருப்பித் தரவும். நன்றி.\n\nHello ${x.borrower_name}, your library book "${x.title}" was due on ${x.due_date}. Please return it soon. Thank you.\n- Kilinochchi Central College Library`;
   return `<a class="btn p" target="_blank" rel="noopener" href="https://wa.me/${n}?text=${encodeURIComponent(msg)}">WhatsApp</a>`;
 }
+let memCache = [];
+function openEdit(title, fields, vals, save) {
+  $('#editTitle').textContent = title;
+  $('#editFields').innerHTML = fields.map(f => `<label>${f.l}${f.opts
+    ? `<select name="${f.k}">${f.opts.map(o => `<option${o === vals[f.k] ? ' selected' : ''}>${o}</option>`).join('')}</select>`
+    : `<input name="${f.k}" type="${f.t || 'text'}" value="${esc(vals[f.k] ?? '')}"${f.r ? ' required' : ''}>`}</label>`).join('');
+  const d = $('#editDlg'); d.showModal();
+  $('#editCancel').onclick = () => d.close();
+  $('#editForm').onsubmit = e => { e.preventDefault(); run(async () => { await save(Object.fromEntries(new FormData(e.target))); d.close(); }, 'Saved.'); };
+}
+$('#navPw').onclick = () => openEdit('Change password', [{ k: 'current', l: 'Current password', t: 'password', r: 1 }, { k: 'next', l: 'New password (at least 4 characters)', t: 'password', r: 1 }], {}, v => api('/api/password', 'POST', v));
 const left = b => (b.quantity || 1) - (b.borrowed_count || 0);
 const chip = b => {
   const q = b.quantity || 1;
@@ -289,6 +308,7 @@ function renderBooks() {
         ${b.pdf_url ? `<a class="btn" href="${esc(b.pdf_url)}" target="_blank" rel="noopener">Read PDF</a>` : ''}
         ${admin ? `${left(b) > 0 ? `<button class="btn p" data-act="issue" data-id="${b.id}">Issue</button>` : ''}
                    ${(b.borrowed_count || 0) > 0 ? `<button class="btn" data-act="returnBook" data-id="${b.id}">Return</button>` : ''}
+                   <button class="btn" data-act="editBook" data-id="${b.id}">Edit</button>
                    <button class="btn d" data-act="delBook" data-id="${b.id}">Delete</button>` : ''}
       </div>
     </div>`).join('') + (all.length > 100 ? `<div class="empty">Showing 100 of ${all.length} books. Type more letters to narrow your search.</div>` : '') : '<div class="empty">No books match your search. Try a different spelling, or search in Tamil or English.</div>';
@@ -316,8 +336,8 @@ function loadTab(tab) {
     $('#stats').innerHTML = card(d.copies, 'Total books') + card(d.titles, 'Book titles') + card(d.available, 'Available books', 'ok') + card(d.borrowed, 'Borrowed books', 'gate') + card(d.overdue, 'Overdue books', 'warn') + card(d.members, 'Members') + card(d.requests, 'Pending requests');
   });
   if (tab === 'members') run(async () => {
-    const m = await api('/api/members');
-    $('#memList').innerHTML = m.map(x => `<div class="row"><div><b>${esc(x.name)}</b><span class="m">${esc(x.id)} &nbsp;·&nbsp; ${esc(x.email)}</span></div><div class="cat m">${esc(x.role)}</div><div></div><div class="acts"><button class="btn d" data-act="delMember" data-id="${esc(x.id)}">Remove</button></div></div>`).join('') || '<div class="empty">No members yet. Add the first one above.</div>';
+    const m = memCache = await api('/api/members');
+    $('#memList').innerHTML = m.map(x => `<div class="row"><div><b>${esc(x.name)}</b><span class="m">${esc(x.id)} &nbsp;·&nbsp; ${esc(x.email)}</span></div><div class="cat m">${esc(x.role)}</div><div></div><div class="acts"><button class="btn" data-act="editMember" data-id="${esc(x.id)}">Edit</button><button class="btn d" data-act="delMember" data-id="${esc(x.id)}">Remove</button></div></div>`).join('') || '<div class="empty">No members yet. Add the first one above.</div>';
   });
   if (tab === 'requests') run(async () => {
     const r = await api('/api/requests');
@@ -346,6 +366,16 @@ const actions = {
     $('#loanDlg').showModal();
   }),
   returnLoan: id => run(async () => { await api(`/api/loans/${id}/return`, 'POST'); $('#loanDlg').close(); await loadBooks(); }, 'Book returned.'),
+  editBook: id => openEdit('Edit book', [{ k: 'title', l: 'Title', r: 1 }, { k: 'author', l: 'Author' }, { k: 'category', l: 'Category' }, { k: 'ledger_info', l: 'Ledger No' }, { k: 'quantity', l: 'Copies', t: 'number' }, { k: 'pdf_url', l: 'PDF link' }],
+    books.find(x => x.id == id), async v => { await api('/api/books/' + id, 'PUT', v); await loadBooks(); }),
+  editMember: id => openEdit('Edit member', [{ k: 'name', l: 'Full name', r: 1 }, { k: 'email', l: 'Email' }, { k: 'phone', l: 'Phone (WhatsApp)' }, { k: 'role', l: 'Role', opts: ['Student', 'Teacher', 'Librarian'] }, { k: 'status', l: 'Status', opts: ['Active', 'Inactive'] }, { k: 'password', l: 'New password (leave empty to keep)', t: 'password' }],
+    memCache.find(x => x.id === id), async v => { await api('/api/members/' + encodeURIComponent(id), 'PUT', v); loadTab('members'); }),
+  backup: () => run(async () => {
+    const [bk, mm, hh] = await Promise.all([api('/api/books'), api('/api/members'), api('/api/history?all=1')]);
+    const wb = XLSX.utils.book_new();
+    [['Books', bk], ['Members', mm], ['Loans', hh]].forEach(([n, d]) => XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(d), n));
+    XLSX.writeFile(wb, `kcc-library-backup-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  }, 'Backup downloaded.'),
   delBook: id => confirm('Delete this book from the catalogue?') && run(async () => { await api('/api/books/' + id, 'DELETE'); await loadBooks(); }, 'Book deleted.'),
   delMember: id => confirm('Remove this member?') && run(async () => { await api('/api/members/' + encodeURIComponent(id), 'DELETE'); loadTab('members'); }, 'Member removed.'),
   approve: id => run(async () => { await api(`/api/requests/${id}/approve`, 'POST'); loadTab('requests'); await loadBooks(); }, 'Book added to the catalogue.'),
