@@ -99,6 +99,7 @@ footer b{color:#fff}
     <button class="nb" data-view="my" id="navMy" hidden>My books</button>
     <button class="nb" data-view="request" id="navReq" hidden>Request a book</button>
     <button class="nb" data-view="admin" id="navAdmin" hidden>Librarian desk</button>
+    <button class="nb" id="langBtn" data-notr>தமிழ்</button>
     <button class="nb" id="navPw" hidden>Password</button>
     <button class="nb cta" id="authBtn">Sign in</button>
   </nav>
@@ -150,6 +151,7 @@ footer b{color:#fff}
       <button class="tab" data-tab="audit">Activity</button>
       <button class="tab" data-tab="print">Print cards</button>
       <button class="tab" data-tab="papers">Papers</button>
+      <button class="tab" data-tab="stock">Stock check</button>
     </div>
     <div id="t-dash"><div class="stats" id="stats"></div>
       <div style="margin-top:18px"><button class="btn p" data-act="backup">Download backup (Excel)</button></div></div>
@@ -188,6 +190,18 @@ footer b{color:#fff}
       </div>
       <div style="margin:12px 0"><button class="btn" data-act="camBook">Scan book with camera</button> <button class="btn" data-act="camMem">Scan member ID with camera</button></div>
       <div id="scInfo"></div>
+    </div>
+    <div id="t-stock" hidden>
+      <div id="stStart"><p style="color:var(--mute);margin-top:0">Scan every book on the shelves. At the end you get a list of books that were not found.</p>
+        <label style="max-width:360px">Name<input id="stName" placeholder="e.g. 2026 stock check"></label>
+        <p><button class="btn p" data-act="stockStart">Start stock check</button></p></div>
+      <div id="stRun" hidden>
+        <p><b id="stTitle"></b> &nbsp;·&nbsp; <span id="stCount"></span></p>
+        <label style="max-width:420px">Scan book barcode or ledger no, then Enter<input id="stScan" autocomplete="off"></label>
+        <div id="stLast" style="margin-top:10px"></div>
+        <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-act="stockMissing">Show missing books</button><button class="btn" data-act="stockExcel">Download missing (Excel)</button><button class="btn d" data-act="stockClose">Close check</button></div>
+        <div id="stMissing" style="margin-top:14px"></div>
+      </div>
     </div>
     <div id="t-papers" hidden>
       <form class="g" id="paperForm">
@@ -424,12 +438,13 @@ $$('.tab').forEach(b => b.onclick = () => {
   $$('.tab').forEach(x => x.classList.toggle('on', x === b)); loadTab(b.dataset.tab);
 });
 function loadTab(tab) {
-  ['dash', 'add', 'members', 'requests', 'overdue', 'history', 'import', 'scan', 'resv', 'reports', 'audit', 'print', 'papers'].forEach(t => $('#t-' + t).hidden = t !== tab);
+  ['dash', 'add', 'members', 'requests', 'overdue', 'history', 'import', 'scan', 'resv', 'reports', 'audit', 'print', 'papers', 'stock'].forEach(t => $('#t-' + t).hidden = t !== tab);
   if (tab === 'dash') run(async () => {
     const d = await api('/api/stats'), n = x => Number(x).toLocaleString();
     const card = (v, l, c = '') => `<div class="stat ${c}"><b>${n(v)}</b><span>${l}</span></div>`;
     $('#stats').innerHTML = card(d.copies, 'Total books') + card(d.titles, 'Book titles') + card(d.available, 'Available books', 'ok') + card(d.borrowed, 'Borrowed books', 'gate') + card(d.overdue, 'Overdue books', 'warn') + card(d.members, 'Members') + card(d.requests, 'Pending requests');
   });
+  if (tab === 'stock') loadStock();
   if (tab === 'papers') loadPapers();
   if (tab === 'print') $('#plCat').innerHTML = '<option value="">All categories</option>' + [...new Set(books.map(b => b.category))].sort().map(c => `<option>${esc(c)}</option>`).join('');
   if (tab === 'scan') setTimeout(() => $('#scBook').focus(), 50);
@@ -587,6 +602,42 @@ actions.doMemImport = () => run(async () => {
   $('#memPreview').innerHTML = `<b>${memRows.length} members saved.</b>`; $('#memFile').value = ''; memRows = []; loadTab('members');
 });
 
+// ---- stock check ----
+let stExp = 0, stLast = [], stMiss = [];
+const stSet = n => $('#stCount').textContent = `${n.toLocaleString()} of ${stExp.toLocaleString()} copies counted`;
+async function loadStock() {
+  await run(async () => {
+    const d = await api('/api/stock'), open = d.check && !d.check.closed_at;
+    stExp = books.reduce((a, b) => a + Math.max(0, (b.quantity || 1) - (b.borrowed_count || 0)), 0);
+    $('#stStart').hidden = open; $('#stRun').hidden = !open;
+    if (open) { $('#stTitle').textContent = d.check.name; stSet(d.scanned); setTimeout(() => $('#stScan').focus(), 50); }
+  });
+}
+$('#stScan').onkeydown = e => {
+  if (e.key !== 'Enter') return; e.preventDefault();
+  const code = e.target.value.trim(); e.target.value = ''; if (!code) return;
+  run(async () => {
+    const r = await api('/api/stock/scan', 'POST', { code });
+    stLast.unshift(r); stLast = stLast.slice(0, 8); stSet(r.scanned);
+    $('#stLast').innerHTML = stLast.map(x => `<div class="row" style="grid-template-columns:1fr auto"><div><b>${esc(x.title)}</b><span class="m">${esc(x.ledger || '')}</span></div><div>${x.status === 'ok' ? '<span class="chip a">Counted</span>' : '<span class="chip b">Already counted</span>'}</div></div>`).join('');
+  });
+};
+Object.assign(actions, {
+  stockStart: () => run(async () => { await api('/api/stock/start', 'POST', { name: $('#stName').value }); await loadStock(); }),
+  stockClose: () => confirm('Close this stock check?') && run(async () => { await api('/api/stock/close', 'POST'); $('#stMissing').innerHTML = ''; await loadStock(); }, 'Stock check closed.'),
+  stockMissing: () => run(async () => {
+    stMiss = (await api('/api/stock/missing')).missing;
+    const total = stMiss.reduce((a, b) => a + b.missing, 0);
+    $('#stMissing').innerHTML = `<b>${total.toLocaleString()} copies not found</b> (${stMiss.length.toLocaleString()} titles)` + stMiss.slice(0, 200).map(b => `<div class="row" style="grid-template-columns:1fr auto"><div><b>${esc(b.title)}</b><span class="m">${esc(b.ledger_info || '')} &nbsp;·&nbsp; ${esc(b.category || '')}</span></div><div><span class="chip b">${b.missing} missing</span></div></div>`).join('') + (stMiss.length > 200 ? '<div class="empty">Download the Excel to see all.</div>' : '');
+  }),
+  stockExcel: () => run(async () => {
+    const m = (await api('/api/stock/missing')).missing;
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(m.map(b => ({ Title: b.title, 'Ledger No': b.ledger_info, Category: b.category, 'Copies missing': b.missing }))), 'Missing');
+    XLSX.writeFile(wb, `missing-books-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  })
+});
+
 // ---- past papers ----
 const GRADES = ['Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11 (O/L)', 'Grade 12', 'Grade 13 (A/L)', 'Other'];
 $('#pg').innerHTML = '<option value="">All grades</option>' + GRADES.map(g => `<option>${g}</option>`).join('');
@@ -684,8 +735,83 @@ submit('#bookForm', '/api/books', loadBooks, 'Book added.');
 submit('#memForm', '/api/members', () => loadTab('members'), 'Member added.');
 submit('#reqForm', '/api/requests', () => {}, 'Request sent to the librarian.');
 
+// ---- Tamil / English interface ----
+const TA = {
+  'Catalogue': 'நூல் பட்டியல்', 'Past papers': 'கடந்தகால வினாத்தாள்கள்', 'My books': 'என் புத்தகங்கள்', 'Request a book': 'புத்தகம் கோருக',
+  'Librarian desk': 'நூலகர் மேசை', 'Password': 'கடவுச்சொல்', 'Sign in': 'உள்நுழை', 'Kilinochchi Central College': 'கிளிநொச்சி மத்திய கல்லூரி',
+  'School Library': 'பாடசாலை நூலகம்', 'Find your next book at KCC': 'உங்கள் அடுத்த புத்தகத்தைக் கண்டுபிடியுங்கள்',
+  'Search in Tamil or English, e.g. thirukkural': 'தமிழ் அல்லது ஆங்கிலத்தில் தேடுங்கள் (எ.கா. thirukkural)', 'Subject, year or title': 'பாடம், ஆண்டு அல்லது தலைப்பு',
+  'All categories': 'அனைத்து வகைகள்', 'All grades': 'அனைத்து தரங்கள்', 'All types': 'அனைத்து வகைகள்', 'All members': 'அனைத்து உறுப்பினர்கள்',
+  'Available': 'கிடைக்கும்', 'All borrowed': 'அனைத்தும் இரவல்', 'books ·': 'புத்தகங்கள் ·', 'available ·': 'கிடைக்கின்றன ·', 'borrowed': 'இரவலில் உள்ளன',
+  'Issue': 'வழங்கு', 'Return': 'திருப்பு', 'Delete': 'நீக்கு', 'Edit': 'திருத்து', 'Reserve': 'முன்பதிவு', 'Read PDF': 'PDF வாசி', 'Renew': 'புதுப்பி',
+  'Cancel': 'ரத்து செய்', 'Save': 'சேமி', 'Close': 'மூடு', 'Remove': 'அகற்று', 'Add': 'சேர்', 'Open PDF': 'PDF திற', 'Mark paid': 'செலுத்தியதாகக் குறி',
+  'Add to catalogue': 'பட்டியலில் சேர்', 'Decline': 'நிராகரி', 'Send request': 'கோரிக்கையை அனுப்பு',
+  'No books match your search. Try a different spelling, or search in Tamil or English.': 'தேடலுக்குப் பொருத்தமான புத்தகம் இல்லை. வேறு எழுத்துக்கூட்டலில் அல்லது தமிழ்/ஆங்கிலத்தில் முயலுங்கள்.',
+  "Can't find a title? Tell the librarian and we'll consider adding it.": 'தேடும் புத்தகம் இல்லையா? நூலகரிடம் தெரிவியுங்கள், சேர்ப்பதைப் பரிசீலிப்போம்.',
+  'Book title': 'புத்தகத்தின் தலைப்பு', 'Author': 'ஆசிரியர்', 'You have no borrowed books right now.': 'தற்போது நீங்கள் எடுத்த புத்தகங்கள் இல்லை.',
+  'Returned': 'திருப்பியவை', 'Reserved': 'முன்பதிவு செய்தவை', 'No returned books yet.': 'இன்னும் திருப்பிய புத்தகங்கள் இல்லை.', 'No reservations.': 'முன்பதிவுகள் இல்லை.',
+  'Past papers and notes': 'கடந்தகால வினாத்தாள்கள் மற்றும் குறிப்புகள்', 'Search': 'தேடல்', 'Grade / Exam': 'தரம் / பரீட்சை', 'Type': 'வகை', 'No papers found yet.': 'இன்னும் வினாத்தாள்கள் இல்லை.',
+  'Dashboard': 'முகப்புப் பலகை', 'Add a book': 'புத்தகம் சேர்', 'Members': 'உறுப்பினர்கள்', 'Requests': 'கோரிக்கைகள்', 'Overdue': 'தாமதமானவை', 'History': 'வரலாறு',
+  'Import Excel': 'Excel இறக்கு', 'Scan': 'ஸ்கேன்', 'Reservations': 'முன்பதிவுகள்', 'Reports': 'அறிக்கைகள்', 'Activity': 'செயல்பாடு', 'Print cards': 'அட்டைகள் அச்சிடு',
+  'Papers': 'வினாத்தாள்கள்', 'Stock check': 'இருப்பு சரிபார்ப்பு', 'Total books': 'மொத்த புத்தகங்கள்', 'Book titles': 'புத்தகத் தலைப்புகள்',
+  'Available books': 'கிடைக்கும் புத்தகங்கள்', 'Borrowed books': 'இரவல் புத்தகங்கள்', 'Overdue books': 'தாமதமான புத்தகங்கள்', 'Pending requests': 'நிலுவை கோரிக்கைகள்',
+  'Download backup (Excel)': 'காப்புப் பிரதி பதிவிறக்கு (Excel)', 'Title': 'தலைப்பு', 'Category': 'வகை', 'Ledger number': 'பேரேட்டு எண்', 'Ledger No': 'பேரேட்டு எண்',
+  'Copies': 'பிரதிகள்', 'PDF link (optional)': 'PDF இணைப்பு (விருப்பம்)', 'Add book': 'புத்தகம் சேர்', 'Member ID': 'உறுப்பினர் எண்', 'Full name': 'முழுப்பெயர்',
+  'Email': 'மின்னஞ்சல்', 'Phone': 'தொலைபேசி', 'Role': 'பங்கு', 'Add member': 'உறுப்பினர் சேர்', 'Name or member ID': 'பெயர் அல்லது உறுப்பினர் எண்',
+  'Name or member ID, and your password. First time, your password is your member ID.': 'பெயர் அல்லது உறுப்பினர் எண்ணும், கடவுச்சொல்லும். முதல் முறை, உங்கள் உறுப்பினர் எண்ணே கடவுச்சொல்.',
+  'Return a book': 'புத்தகம் திருப்பு', '(National School), Kilinochchi, Sri Lanka': '(தேசிய பாடசாலை), கிளிநொச்சி, இலங்கை',
+  'No overdue books.': 'தாமதமான புத்தகங்கள் இல்லை.', 'No pending requests.': 'நிலுவை கோரிக்கைகள் இல்லை.', 'Counted': 'எண்ணப்பட்டது', 'Already counted': 'ஏற்கனவே எண்ணப்பட்டது',
+  'Start stock check': 'சரிபார்ப்பைத் தொடங்கு', 'Show missing books': 'காணாத புத்தகங்களைக் காட்டு', 'Close check': 'சரிபார்ப்பை முடி',
+  'Saved.': 'சேமிக்கப்பட்டது.', 'Signed in.': 'உள்நுழைந்தீர்கள்.', 'Book issued.': 'புத்தகம் வழங்கப்பட்டது.', 'Book returned.': 'புத்தகம் திருப்பப்பட்டது.', 'Renewed.': 'புதுப்பிக்கப்பட்டது.',
+  'Reserved. The library will tell you when it is available.': 'முன்பதிவு செய்யப்பட்டது. கிடைத்ததும் நூலகம் தெரிவிக்கும்.'
+};
+const TAR = [
+  [/^(\d+) of (\d+) available$/, '$1 / $2 கிடைக்கும்'], [/^Due (.+)$/, 'திருப்ப வேண்டிய நாள்: $1'], [/^Sign out \((.+)\)$/, 'வெளியேறு ($1)'],
+  [/Serving our students since 1927/, '1927 முதல் எங்கள் மாணவர்களுக்குச் சேவை'], [/^(\d+) days late · Rs\. (\d+)$/, '$1 நாட்கள் தாமதம் · ரூ. $2'],
+  [/^Showing 100 of (.+) books\. Type more letters to narrow your search\.$/, '$1 புத்தகங்களில் 100 காட்டப்படுகிறது. தேடலைச் சுருக்க மேலும் எழுத்துகளை உள்ளிடுங்கள்.'],
+  [/^You can borrow up to (\d+) books, (\d+) days each\.$/, 'நீங்கள் $1 புத்தகங்கள் வரை, ஒவ்வொன்றும் $2 நாட்கள் எடுக்கலாம்.']
+];
+let lang = localStorage.getItem('kccLang') === 'ta' ? 'ta' : 'en';
+const trTracked = new Set(), trOrig = new WeakMap(), trDone = new WeakMap();
+function trText(s) {
+  const k = s.replace(/\s+/g, ' ').trim(); if (!k) return null;
+  const lead = s.match(/^\s*/)[0], trail = s.match(/\s*$/)[0];
+  if (TA[k]) return lead + TA[k] + trail;
+  for (const [re, to] of TAR) if (re.test(k)) return lead + k.replace(re, to) + trail;
+  return null;
+}
+function trNode(n) {
+  const p = n.parentElement;
+  if (!p || p.closest('[data-notr],script,style,textarea') || (p.tagName === 'OPTION' && !p.hasAttribute('value'))) return;
+  if (trDone.get(n) === n.nodeValue) return;
+  const out = trText(n.nodeValue); if (out == null || out === n.nodeValue) return;
+  trOrig.set(n, n.nodeValue); trDone.set(n, out); trTracked.add(n); n.nodeValue = out;
+}
+function trTree(root) {
+  if (root.nodeType === 3) return trNode(root);
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT); let n;
+  while ((n = w.nextNode())) trNode(n);
+}
+new MutationObserver(ms => {
+  if (lang !== 'ta') return;
+  ms.forEach(m => m.type === 'characterData' ? trNode(m.target) : m.addedNodes.forEach(n => (n.nodeType === 3 || n.nodeType === 1) && trTree(n)));
+}).observe(document.body, { childList: true, subtree: true, characterData: true });
+function setLang(l) {
+  lang = l; localStorage.setItem('kccLang', l); document.documentElement.lang = l;
+  $('#langBtn').textContent = l === 'ta' ? 'English' : 'தமிழ்';
+  if (l === 'ta') {
+    trTree(document.body);
+    $$('[placeholder]').forEach(e => { const o = e.dataset.ph || e.placeholder; if (TA[o]) { e.dataset.ph = o; e.placeholder = TA[o]; } });
+  } else {
+    trTracked.forEach(n => { if (trOrig.has(n) && n.isConnected) { trDone.delete(n); n.nodeValue = trOrig.get(n); } });
+    trTracked.clear();
+    $$('[data-ph]').forEach(e => e.placeholder = e.dataset.ph);
+  }
+}
+$('#langBtn').onclick = () => setLang(lang === 'ta' ? 'en' : 'ta');
+
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
-refreshChrome(); loadBooks();
+refreshChrome(); loadBooks(); setLang(lang);
 </script>
 </body>
 </html>
