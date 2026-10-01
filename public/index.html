@@ -66,6 +66,7 @@ footer b{color:#fff}
 .stat span{color:var(--mute);font-size:14px}
 .stat.ok{border-left-color:var(--ok)}.stat.warn{border-left-color:var(--warn)}.stat.gate{border-left-color:var(--gate)}
 .pub{color:var(--mute);margin:-6px 0 8px;font-size:15px}.pub b{color:var(--ink)}
+@media print{header.bar,.hero,footer,.tabs,.btn,.nb,#toast{display:none!important}main{padding:0}.panel{border:0;padding:0}}
 [hidden]{display:none!important}
 @media(max-width:720px){.row{grid-template-columns:1fr auto}.row .cat{display:none}.bar nav{margin-left:0;width:100%}}
 </style>
@@ -98,7 +99,7 @@ footer b{color:#fff}
 <main>
   <section id="v-catalog" class="panel"><h2>Catalogue</h2><div class="pub" id="pubStats"></div><div id="list"></div></section>
 
-  <section id="v-my" class="panel" hidden><h2>My books</h2><div id="myList"></div><h2 style="margin-top:26px">Returned</h2><div id="myPast"></div></section>
+  <section id="v-my" class="panel" hidden><h2>My books</h2><div id="myList"></div><h2 style="margin-top:26px">Returned</h2><div id="myPast"></div><h2 style="margin-top:26px">Reserved</h2><div id="myResv"></div></section>
 
   <section id="v-request" class="panel" hidden>
     <h2>Request a book</h2>
@@ -120,6 +121,10 @@ footer b{color:#fff}
       <button class="tab" data-tab="overdue">Overdue</button>
       <button class="tab" data-tab="history">History</button>
       <button class="tab" data-tab="import">Import Excel</button>
+      <button class="tab" data-tab="scan">Scan</button>
+      <button class="tab" data-tab="resv">Reservations</button>
+      <button class="tab" data-tab="reports">Reports</button>
+      <button class="tab" data-tab="audit">Activity</button>
     </div>
     <div id="t-dash"><div class="stats" id="stats"></div>
       <div style="margin-top:18px"><button class="btn p" data-act="backup">Download backup (Excel)</button></div></div>
@@ -150,6 +155,18 @@ footer b{color:#fff}
     <div id="t-requests" hidden></div>
     <div id="t-overdue" hidden></div>
     <div id="t-history" hidden></div>
+    <div id="t-scan" hidden>
+      <p style="color:var(--mute);margin-top:0">Scan with a USB scanner, the camera, or type. Book barcode or ledger no, then Member ID. If the member already has the book it is returned, otherwise it is issued.</p>
+      <div class="stats" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr))">
+        <label>Book barcode / ledger no<input id="scBook" autocomplete="off"></label>
+        <label>Member ID<input id="scMem" autocomplete="off"></label>
+      </div>
+      <div style="margin:12px 0"><button class="btn" data-act="camBook">Scan book with camera</button> <button class="btn" data-act="camMem">Scan member ID with camera</button></div>
+      <div id="scInfo"></div>
+    </div>
+    <div id="t-resv" hidden></div>
+    <div id="t-reports" hidden></div>
+    <div id="t-audit" hidden></div>
     <div id="t-import" hidden>
       <p style="color:var(--mute);margin-top:0">Excel file (.xlsx) choose pannunga. Columns: <b>Title, Author, Category, Ledger No, Quantity</b>. Tamil and English names rendum work aagum.</p>
       <input type="file" id="xlsFile" accept=".xlsx,.xls,.csv">
@@ -180,6 +197,11 @@ footer b{color:#fff}
 <dialog id="editDlg">
   <form method="dialog" id="editForm"><h3 id="editTitle"></h3><div id="editFields"></div>
     <div class="acts"><button type="button" class="btn" id="editCancel">Cancel</button><button class="btn p">Save</button></div></form>
+</dialog>
+
+<dialog id="camDlg">
+  <h3>Scan barcode</h3><video id="camVideo" playsinline style="width:100%;border-radius:8px;background:#000"></video>
+  <div class="acts"><button class="btn" id="camStop">Close</button></div>
 </dialog>
 
 <dialog id="loanDlg">
@@ -293,6 +315,7 @@ function loadMy() {
     const d = await api('/api/my');
     $('#myList').innerHTML = d.open.map(l => `<div class="row" style="grid-template-columns:2fr 1.5fr auto"><div><b>${esc(l.book_title)}</b><span class="m">Issued ${esc(l.issue_date)}${l.renewals ? ' · renewed ' + l.renewals + ' time(s)' : ''}</span></div><div>${l.late > 0 ? `<span class="chip b">${l.late} days late · Rs. ${l.fine}</span>` : `<span class="chip a">Due ${esc(l.due_date)}</span>`}</div><div class="acts">${l.late > 0 || l.renewals >= 2 ? '' : `<button class="btn p" data-act="renew" data-id="${l.id}">Renew 14 days</button>`}</div></div>`).join('') || '<div class="empty">You have no borrowed books right now.</div>';
     $('#myPast').innerHTML = d.past.map(l => `<div class="row" style="grid-template-columns:2fr 1.5fr auto"><div><b>${esc(l.book_title)}</b></div><div class="m">Returned ${esc(l.return_date)}</div><div>${l.fine_amount > 0 ? (l.fine_paid ? '<span class="chip a">Fine paid</span>' : `<span class="chip b">Fine Rs. ${l.fine_amount}</span>`) : ''}</div></div>`).join('') || '<div class="empty">No returned books yet.</div>';
+    $('#myResv').innerHTML = (d.reservations || []).map(r => `<div class="row" style="grid-template-columns:1fr auto"><div><b>${esc(r.book_title)}</b><span class="m">Waiting since ${esc(String(r.created_at).slice(0, 10))}</span></div><div><button class="btn d" data-act="cancelResv" data-id="${r.id}">Cancel</button></div></div>`).join('') || '<div class="empty">No reservations.</div>';
   });
 }
 function openEdit(title, fields, vals, save) {
@@ -321,6 +344,7 @@ function renderBooks() {
       <div>${chip(b)}</div>
       <div class="acts">
         ${b.pdf_url ? `<a class="btn" href="${esc(b.pdf_url)}" target="_blank" rel="noopener">Read PDF</a>` : ''}
+        ${me && me.memberId && left(b) <= 0 ? `<button class="btn" data-act="reserve" data-id="${b.id}">Reserve</button>` : ''}
         ${admin ? `${left(b) > 0 ? `<button class="btn p" data-act="issue" data-id="${b.id}">Issue</button>` : ''}
                    ${(b.borrowed_count || 0) > 0 ? `<button class="btn" data-act="returnBook" data-id="${b.id}">Return</button>` : ''}
                    <button class="btn" data-act="editBook" data-id="${b.id}">Edit</button>
@@ -344,11 +368,33 @@ $$('.tab').forEach(b => b.onclick = () => {
   $$('.tab').forEach(x => x.classList.toggle('on', x === b)); loadTab(b.dataset.tab);
 });
 function loadTab(tab) {
-  ['dash', 'add', 'members', 'requests', 'overdue', 'history', 'import'].forEach(t => $('#t-' + t).hidden = t !== tab);
+  ['dash', 'add', 'members', 'requests', 'overdue', 'history', 'import', 'scan', 'resv', 'reports', 'audit'].forEach(t => $('#t-' + t).hidden = t !== tab);
   if (tab === 'dash') run(async () => {
     const d = await api('/api/stats'), n = x => Number(x).toLocaleString();
     const card = (v, l, c = '') => `<div class="stat ${c}"><b>${n(v)}</b><span>${l}</span></div>`;
     $('#stats').innerHTML = card(d.copies, 'Total books') + card(d.titles, 'Book titles') + card(d.available, 'Available books', 'ok') + card(d.borrowed, 'Borrowed books', 'gate') + card(d.overdue, 'Overdue books', 'warn') + card(d.members, 'Members') + card(d.requests, 'Pending requests');
+  });
+  if (tab === 'scan') setTimeout(() => $('#scBook').focus(), 50);
+  if (tab === 'resv') run(async () => {
+    const r = await api('/api/reservations');
+    $('#t-resv').innerHTML = r.map(x => {
+      const b = books.find(k => k.id == x.book_id), now = b && left(b) > 0;
+      let n = String(x.phone || '').replace(/\D/g, ''); if (n.startsWith('0')) n = '94' + n.slice(1);
+      const wa = now && n.length >= 10 ? `<a class="btn p" target="_blank" rel="noopener" href="https://wa.me/${n}?text=${encodeURIComponent(`வணக்கம் ${x.member_name}, நீங்கள் முன்பதிவு செய்த "${x.book_title}" புத்தகம் இப்போது நூலகத்தில் உள்ளது.\n\nHello ${x.member_name}, the book you reserved ("${x.book_title}") is now available at the library.\n- Kilinochchi Central College Library`)}">WhatsApp</a>` : '';
+      return `<div class="row"><div><b>${esc(x.book_title)}</b><span class="m">${esc(x.member_name)} (${esc(x.member_id)})</span></div><div class="cat m">Since ${esc(String(x.created_at).slice(0, 10))}</div><div>${now ? '<span class="chip a">Copy available</span>' : '<span class="chip b">Waiting</span>'}</div><div class="acts">${wa}<button class="btn d" data-act="cancelResv" data-id="${x.id}">Cancel</button></div></div>`;
+    }).join('') || '<div class="empty">No reservations.</div>';
+  });
+  if (tab === 'reports') run(async () => {
+    const d = await api('/api/reports');
+    const bars = (a, lab = x => x.name) => { const mx = Math.max(1, ...a.map(x => x.count)); return a.map(x => `<div style="display:grid;grid-template-columns:minmax(120px,2fr) 3fr 40px;gap:10px;align-items:center;padding:5px 0"><span>${esc(lab(x))}</span><div style="background:var(--wash);border-radius:4px"><div style="height:14px;border-radius:4px;background:var(--gate);width:${x.count / mx * 100}%"></div></div><b>${x.count}</b></div>`).join('') || '<div class="empty">No data yet.</div>'; };
+    $('#t-reports').innerHTML = `<div class="stats" style="margin-bottom:20px"><div class="stat gate"><b>${d.loans.toLocaleString()}</b><span>Total loans ever</span></div><div class="stat ok"><b>Rs. ${d.collected.toLocaleString()}</b><span>Fines collected</span></div></div>
+      <h3>Most borrowed books</h3>${bars(d.topBooks)}<h3 style="margin-top:22px">Most active readers</h3>${bars(d.topReaders)}<h3 style="margin-top:22px">Loans per month</h3>${bars(d.monthly)}
+      <p style="margin-top:20px"><button class="btn" onclick="window.print()">Print this report</button></p>`;
+  });
+  if (tab === 'audit') run(async () => {
+    const a = await api('/api/audit');
+    const L = [[/books\/bulk/, 'Imported books from Excel'], [/books\/\d+\/issue/, 'Issued a book'], [/books\/\d+\/scan/, 'Scanned a book'], [/books\/\d+\/reserve/, 'Reserved a book'], [/loans\/\d+\/return/, 'Returned a book'], [/loans\/\d+\/renew/, 'Renewed a loan'], [/loans\/\d+\/paid/, 'Marked a fine paid'], [/^POST \/api\/books$/, 'Added a book'], [/^PUT \/api\/books/, 'Edited a book'], [/^DELETE \/api\/books/, 'Deleted a book'], [/members\/bulk/, 'Imported members'], [/^POST \/api\/members$/, 'Added a member'], [/^PUT \/api\/members/, 'Edited a member'], [/^DELETE \/api\/members/, 'Deleted a member'], [/approve/, 'Approved a book request'], [/^POST \/api\/requests$/, 'Requested a book'], [/reservations/, 'Cancelled a reservation'], [/password/, 'Changed a password']];
+    $('#t-audit').innerHTML = a.map(x => `<div class="row"><div><b>${esc((L.find(l => l[0].test(x.action)) || [0, x.action])[1])}</b><span class="m">${esc(x.detail || '')}</span></div><div class="cat m">${esc(x.who)}</div><div class="m">${esc(String(x.at).slice(0, 16).replace('T', ' '))}</div><div></div></div>`).join('') || '<div class="empty">No activity yet.</div>';
   });
   if (tab === 'members') run(async () => {
     const m = memCache = await api('/api/members');
@@ -403,6 +449,10 @@ const actions = {
     [['Books', bk], ['Members', mm], ['Loans', hh]].forEach(([n, d]) => XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(d), n));
     XLSX.writeFile(wb, `kcc-library-backup-${new Date().toISOString().slice(0, 10)}.xlsx`);
   }, 'Backup downloaded.'),
+  reserve: id => run(async () => { await api(`/api/books/${id}/reserve`, 'POST'); }, 'Reserved. The library will tell you when it is available.'),
+  cancelResv: id => run(async () => { await api('/api/reservations/' + id, 'DELETE'); if (!$('#v-my').hidden) loadMy(); else loadTab('resv'); }, 'Reservation cancelled.'),
+  camBook: () => camScan($('#scBook')),
+  camMem: () => camScan($('#scMem')),
   delBook: id => confirm('Delete this book from the catalogue?') && run(async () => { await api('/api/books/' + id, 'DELETE'); await loadBooks(); }, 'Book deleted.'),
   delMember: id => confirm('Remove this member?') && run(async () => { await api('/api/members/' + encodeURIComponent(id), 'DELETE'); loadTab('members'); }, 'Member removed.'),
   approve: id => run(async () => { await api(`/api/requests/${id}/approve`, 'POST'); loadTab('requests'); await loadBooks(); }, 'Book added to the catalogue.'),
@@ -464,6 +514,41 @@ actions.doMemImport = () => run(async () => {
   for (let i = 0; i < memRows.length; i += 200) await api('/api/members/bulk', 'POST', { members: memRows.slice(i, i + 200) });
   $('#memPreview').innerHTML = `<b>${memRows.length} members saved.</b>`; $('#memFile').value = ''; memRows = []; loadTab('members');
 });
+
+// ---- barcode scan ----
+let scanBook = null;
+async function camScan(target) {
+  if (!('BarcodeDetector' in window)) return toast('Camera scanning is not supported in this browser. Use a USB scanner or type the code.', true);
+  try {
+    const v = $('#camVideo'), d = $('#camDlg'), det = new BarcodeDetector();
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    v.srcObject = stream; await v.play(); d.showModal();
+    let on = true; const stop = () => { on = false; stream.getTracks().forEach(t => t.stop()); d.close(); };
+    $('#camStop').onclick = stop;
+    while (on) {
+      const r = await det.detect(v).catch(() => []);
+      if (r.length) { target.value = r[0].rawValue; stop(); target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' })); return; }
+      await new Promise(x => setTimeout(x, 300));
+    }
+  } catch (e) { toast('Could not open the camera.', true); }
+}
+$('#scBook').onkeydown = e => {
+  if (e.key !== 'Enter') return; e.preventDefault();
+  const c = e.target.value.trim().toLowerCase();
+  scanBook = books.find(b => (b.barcode || '').toLowerCase() === c || (b.ledger_info || '').toLowerCase() === c);
+  $('#scInfo').innerHTML = scanBook ? `<b>${esc(scanBook.title)}</b> &nbsp;${chip(scanBook)}` : '<span class="chip b">Book not found</span>';
+  if (scanBook) $('#scMem').focus();
+};
+$('#scMem').onkeydown = e => {
+  if (e.key !== 'Enter') return; e.preventDefault();
+  run(async () => {
+    if (!scanBook) throw new Error('Scan a book first.');
+    const mid = e.target.value.trim(); if (!mid) throw new Error('Enter the Member ID.');
+    const r = await api(`/api/books/${scanBook.id}/scan`, 'POST', { borrowerId: mid });
+    $('#scInfo').innerHTML = r.action === 'issued' ? `<span class="chip a">Issued to ${esc(r.name)}, due ${esc(r.due)}</span>` : `<span class="chip a">Returned by ${esc(r.name)}${r.fine ? `. Late fine Rs. ${r.fine} (see Overdue tab)` : ''}</span>`;
+    $('#scBook').value = $('#scMem').value = ''; scanBook = null; await loadBooks(); $('#scBook').focus();
+  });
+};
 
 // ---- forms ----
 const submit = (sel, url, done, msg) => $(sel).onsubmit = e => { e.preventDefault(); run(async () => {
