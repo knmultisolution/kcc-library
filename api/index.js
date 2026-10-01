@@ -348,6 +348,59 @@ app.delete('/api/papers/:id', auth('admin'), h(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// ---- stock check: scan every book on the shelf, then list what is missing ----
+const stockCheck = async () => {
+  const open = await q(db.from('stock_checks').select('*').is('closed_at', null).order('id', { ascending: false }).limit(1));
+  if (open[0]) return open[0];
+  return (await q(db.from('stock_checks').select('*').order('id', { ascending: false }).limit(1)))[0] || null;
+};
+const scanCount = async (id, bookId) => {
+  let r = db.from('stock_scans').select('*', { count: 'exact', head: true }).eq('check_id', id);
+  if (bookId) r = r.eq('book_id', bookId);
+  const { count, error } = await r;
+  if (error) throw new Error(error.message);
+  return count || 0;
+};
+app.get('/api/stock', auth('admin'), h(async (_req, res) => {
+  const check = await stockCheck();
+  res.json({ check, scanned: check ? await scanCount(check.id) : 0 });
+}));
+app.post('/api/stock/start', auth('admin'), h(async (req, res) => {
+  const c = await stockCheck();
+  if (c && !c.closed_at) return res.json({ check: c });
+  const rows = await q(db.from('stock_checks').insert({ name: String(req.body.name || '').trim() || 'Stock check ' + today() }).select());
+  res.json({ check: rows[0] });
+}));
+app.post('/api/stock/scan', auth('admin'), h(async (req, res) => {
+  const check = await stockCheck();
+  if (!check || check.closed_at) return res.status(400).json({ error: 'Start a stock check first.' });
+  const code = String(req.body.code || '').trim().replace(/[,()*%]/g, '');
+  if (!code) return res.status(400).json({ error: 'Scan or type a barcode / ledger number.' });
+  const [book] = await q(db.from('books').select('*').or(`barcode.ilike.${code},ledger_info.ilike.${code}`).limit(1));
+  if (!book) return res.status(404).json({ error: `No book found for "${code}".` });
+  const onShelf = Math.max(0, (book.quantity || 1) - (book.borrowed_count || 0));
+  let status = 'ok';
+  if (await scanCount(check.id, book.id) >= onShelf) status = 'dup';
+  else await q(db.from('stock_scans').insert({ check_id: check.id, book_id: book.id }));
+  res.json({ title: book.title, ledger: book.ledger_info, status, scanned: await scanCount(check.id) });
+}));
+app.get('/api/stock/missing', auth('admin'), h(async (_req, res) => {
+  const check = await stockCheck();
+  if (!check) return res.json({ check: null, missing: [] });
+  const [bks, scans] = await Promise.all([
+    fetchAll(() => db.from('books').select('id,title,ledger_info,category,quantity,borrowed_count').order('id')),
+    fetchAll(() => db.from('stock_scans').select('book_id').eq('check_id', check.id).order('id'))
+  ]);
+  const got = {}; scans.forEach(x => got[x.book_id] = (got[x.book_id] || 0) + 1);
+  const missing = bks.map(b => ({ id: b.id, title: b.title, ledger_info: b.ledger_info, category: b.category, missing: Math.max(0, (b.quantity || 1) - (b.borrowed_count || 0)) - (got[b.id] || 0) })).filter(b => b.missing > 0);
+  res.json({ check, missing });
+}));
+app.post('/api/stock/close', auth('admin'), h(async (_req, res) => {
+  const c = await stockCheck();
+  if (c && !c.closed_at) await q(db.from('stock_checks').update({ closed_at: new Date().toISOString() }).eq('id', c.id));
+  res.json({ ok: true });
+}));
+
 // ---- dashboard numbers ----
 app.get('/api/stats', auth('admin'), h(async (_req, res) => {
   const cnt = async p => { const { count, error } = await p; if (error) throw new Error(error.message); return count || 0; };
