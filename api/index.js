@@ -137,8 +137,11 @@ app.post('/api/books/:id/issue', auth('admin'), h(async (req, res) => {
   res.json({ ok: true });
 }));
 
-app.get('/api/books/:id/loans', auth('admin'), h(async (req, res) =>
-  res.json(await q(db.from('history').select('*').eq('book_id', req.params.id).is('return_date', null).order('id')))));
+app.get('/api/books/:id/loans', auth('admin'), h(async (req, res) => {
+  const loans = await q(db.from('history').select('*').eq('book_id', req.params.id).is('return_date', null).order('id'));
+  if (!loans.length) await sync(req.params.id); // fixes a book that wrongly shows as borrowed
+  res.json(loans);
+}));
 
 app.post('/api/loans/:id/return', auth('admin'), h(async (req, res) => {
   const [l] = await q(db.from('history').select('*').eq('id', req.params.id));
