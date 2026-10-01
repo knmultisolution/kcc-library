@@ -497,6 +497,7 @@ const actions = {
   }, 'Book issued.'),
   returnBook: id => run(async () => {
     curLoans = await api(`/api/books/${id}/loans`);
+    if (!curLoans.length) loadBooks();
     $('#loanTitle').textContent = books.find(x => x.id == id).title;
     $('#loanList').innerHTML = curLoans.map(l => {
       const late = lateOf(l.due_date);
