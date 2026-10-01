@@ -68,6 +68,8 @@ footer b{color:#fff}
 .pub{color:var(--mute);margin:-6px 0 8px;font-size:15px}.pub b{color:var(--ink)}
 @media print{header.bar,.hero,footer,.tabs,.btn,.nb,#toast{display:none!important}main{padding:0}.panel{border:0;padding:0}}
 #printArea{display:none}
+.notice{background:#fff7f3;border:1px solid #f3c9b8;border-left:5px solid var(--gate);border-radius:10px;padding:12px 16px;margin-bottom:10px}
+.shelf{margin:0 0 12px}.shelf div{margin:4px 0}.shelf b{margin-right:8px}.shelf .btn{margin:2px 4px 2px 0;font-size:14px;padding:4px 10px}
 .g2{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
 .cards{grid-template-columns:repeat(2,85.6mm);gap:4mm}
 .idc{width:85.6mm;height:54mm;border:1px solid #999;border-radius:3mm;overflow:hidden;break-inside:avoid;background:#fff;color:#000}
@@ -115,7 +117,7 @@ footer b{color:#fff}
 </div></section>
 
 <main>
-  <section id="v-catalog" class="panel"><h2>Catalogue</h2><div class="pub" id="pubStats"></div><div id="list"></div></section>
+  <section id="v-catalog" class="panel"><div id="notices"></div><h2>Catalogue</h2><div class="pub" id="pubStats"></div><div class="shelf" id="shelf"></div><div id="list"></div></section>
 
   <section id="v-papers" class="panel" hidden>
     <h2>Past papers and notes</h2>
@@ -152,6 +154,8 @@ footer b{color:#fff}
       <button class="tab" data-tab="print">Print cards</button>
       <button class="tab" data-tab="papers">Papers</button>
       <button class="tab" data-tab="stock">Stock check</button>
+      <button class="tab" data-tab="dups">Duplicates</button>
+      <button class="tab" data-tab="notices">Notices</button>
     </div>
     <div id="t-dash"><div class="stats" id="stats"></div>
       <div style="margin-top:18px"><button class="btn p" data-act="backup">Download backup (Excel)</button></div></div>
@@ -190,6 +194,15 @@ footer b{color:#fff}
       </div>
       <div style="margin:12px 0"><button class="btn" data-act="camBook">Scan book with camera</button> <button class="btn" data-act="camMem">Scan member ID with camera</button></div>
       <div id="scInfo"></div>
+    </div>
+    <div id="t-dups" hidden></div>
+    <div id="t-notices" hidden>
+      <form class="g" id="noticeForm">
+        <label>Title<input name="title" required></label>
+        <label>Message (optional)<input name="body"></label>
+        <div style="align-self:end"><button class="btn p">Post notice</button></div>
+      </form>
+      <div id="noticeList" style="margin-top:16px"></div>
     </div>
     <div id="t-stock" hidden>
       <div id="stStart"><p style="color:var(--mute);margin-top:0">Scan every book on the shelves. At the end you get a list of books that were not found.</p>
@@ -336,9 +349,10 @@ async function loadBooks() {
     books = await api('/api/books');
     const cats = [...new Set(books.map(b => b.category))].sort();
     $('#cat').innerHTML = '<option value="">All categories</option>' + cats.map(c => `<option>${esc(c)}</option>`).join('');
-    const cp = books.reduce((a, b) => a + (b.quantity || 1), 0), br = books.reduce((a, b) => a + (b.borrowed_count || 0), 0);
-    $('#pubStats').innerHTML = `<b>${cp.toLocaleString()}</b> books &nbsp;·&nbsp; <b>${(cp - br).toLocaleString()}</b> available &nbsp;·&nbsp; <b>${br.toLocaleString()}</b> borrowed`;
+    const cp = books.reduce((a, b) => a + (b.quantity || 1), 0), br = books.reduce((a, b) => a + (b.borrowed_count || 0), 0), ls = books.reduce((a, b) => a + (b.lost_count || 0), 0);
+    $('#pubStats').innerHTML = `<b>${cp.toLocaleString()}</b> books &nbsp;·&nbsp; <b>${(cp - br - ls).toLocaleString()}</b> available &nbsp;·&nbsp; <b>${br.toLocaleString()}</b> borrowed`;
     renderBooks();
+    loadShelf(); loadNotices();
   });
 }
 // ---- Tamil / English (phonetic) search ----
@@ -397,10 +411,10 @@ function openEdit(title, fields, vals, save) {
   $('#editForm').onsubmit = e => { e.preventDefault(); run(async () => { await save(Object.fromEntries(new FormData(e.target))); d.close(); }, 'Saved.'); };
 }
 $('#navPw').onclick = () => openEdit('Change password', [{ k: 'current', l: 'Current password', t: 'password', r: 1 }, { k: 'next', l: 'New password (at least 4 characters)', t: 'password', r: 1 }], {}, v => api('/api/password', 'POST', v));
-const left = b => (b.quantity || 1) - (b.borrowed_count || 0);
+const left = b => (b.quantity || 1) - (b.borrowed_count || 0) - (b.lost_count || 0);
 const chip = b => {
   const q = b.quantity || 1;
-  if (left(b) <= 0) return '<span class="chip b">All borrowed</span>';
+  if (left(b) <= 0) return (b.borrowed_count || 0) > 0 ? '<span class="chip b">All borrowed</span>' : '<span class="chip b">Lost / damaged</span>';
   return q === 1 ? '<span class="chip a">Available</span>' : `<span class="chip a">${left(b)} of ${q} available</span>`;
 };
 function renderBooks() {
@@ -438,11 +452,19 @@ $$('.tab').forEach(b => b.onclick = () => {
   $$('.tab').forEach(x => x.classList.toggle('on', x === b)); loadTab(b.dataset.tab);
 });
 function loadTab(tab) {
-  ['dash', 'add', 'members', 'requests', 'overdue', 'history', 'import', 'scan', 'resv', 'reports', 'audit', 'print', 'papers', 'stock'].forEach(t => $('#t-' + t).hidden = t !== tab);
+  ['dash', 'add', 'members', 'requests', 'overdue', 'history', 'import', 'scan', 'resv', 'reports', 'audit', 'print', 'papers', 'stock', 'dups', 'notices'].forEach(t => $('#t-' + t).hidden = t !== tab);
   if (tab === 'dash') run(async () => {
     const d = await api('/api/stats'), n = x => Number(x).toLocaleString();
     const card = (v, l, c = '') => `<div class="stat ${c}"><b>${n(v)}</b><span>${l}</span></div>`;
-    $('#stats').innerHTML = card(d.copies, 'Total books') + card(d.titles, 'Book titles') + card(d.available, 'Available books', 'ok') + card(d.borrowed, 'Borrowed books', 'gate') + card(d.overdue, 'Overdue books', 'warn') + card(d.members, 'Members') + card(d.requests, 'Pending requests');
+    $('#stats').innerHTML = card(d.copies, 'Total books') + card(d.titles, 'Book titles') + card(d.available, 'Available books', 'ok') + card(d.borrowed, 'Borrowed books', 'gate') + card(d.lost, 'Lost / damaged', 'warn') + card(d.overdue, 'Overdue books', 'warn') + card(d.members, 'Members') + card(d.requests, 'Pending requests');
+  });
+  if (tab === 'dups') run(async () => {
+    dupGroups = await api('/api/duplicates');
+    $('#t-dups').innerHTML = '<p style="color:var(--mute);margin-top:0">Same title found more than once. These may be separate copies. Merging joins them into one book with the total copies, and the ledger numbers are listed together. Merge after you have printed barcode labels.</p>' + (dupGroups.map((g, i) => `<div class="panel" style="padding:14px;margin-bottom:12px"><b>${esc(g[0].title)}</b>${g.map(b => `<div class="m">#${b.id} &nbsp;·&nbsp; ${esc(b.ledger_info || '-')} &nbsp;·&nbsp; ${b.quantity || 1} copies${b.borrowed_count ? ' &nbsp;·&nbsp; ' + b.borrowed_count + ' borrowed' : ''}</div>`).join('')}<div style="margin-top:8px"><button class="btn p" data-act="merge" data-id="${i}">Merge into one book (${g.reduce((a, b) => a + (b.quantity || 1), 0)} copies)</button></div></div>`).join('') || '<div class="empty">No duplicate titles found.</div>');
+  });
+  if (tab === 'notices') run(async () => {
+    const n = await api('/api/announcements');
+    $('#noticeList').innerHTML = n.map(x => `<div class="row" style="grid-template-columns:1fr auto"><div><b>${esc(x.title)}</b><span class="m">${esc(x.body || '')}</span></div><div><button class="btn d" data-act="delNotice" data-id="${x.id}">Delete</button></div></div>`).join('') || '<div class="empty">No notices posted.</div>';
   });
   if (tab === 'stock') loadStock();
   if (tab === 'papers') loadPapers();
@@ -513,7 +535,7 @@ const actions = {
   renewLoan: id => run(async () => { await api(`/api/loans/${id}/renew`, 'POST'); $('#loanDlg').close(); await loadBooks(); }, 'Renewed.'),
   renew: id => run(async () => { await api(`/api/loans/${id}/renew`, 'POST'); loadMy(); }, 'Renewed.'),
   paid: id => run(async () => { await api(`/api/loans/${id}/paid`, 'POST'); loadTab('overdue'); }, 'Fine marked as paid.'),
-  editBook: id => openEdit('Edit book', [{ k: 'title', l: 'Title', r: 1 }, { k: 'author', l: 'Author' }, { k: 'category', l: 'Category' }, { k: 'ledger_info', l: 'Ledger No' }, { k: 'quantity', l: 'Copies', t: 'number' }, { k: 'pdf_url', l: 'PDF link' }],
+  editBook: id => openEdit('Edit book', [{ k: 'title', l: 'Title', r: 1 }, { k: 'author', l: 'Author' }, { k: 'category', l: 'Category' }, { k: 'ledger_info', l: 'Ledger No' }, { k: 'quantity', l: 'Copies', t: 'number' }, { k: 'lost_count', l: 'Lost or damaged copies', t: 'number' }, { k: 'pdf_url', l: 'PDF link' }],
     books.find(x => x.id == id), async v => { await api('/api/books/' + id, 'PUT', v); await loadBooks(); }),
   editMember: id => openEdit('Edit member', [{ k: 'name', l: 'Full name', r: 1 }, { k: 'email', l: 'Email' }, { k: 'phone', l: 'Phone (WhatsApp)' }, { k: 'role', l: 'Role', opts: ['Student', 'Teacher', 'Librarian'] }, { k: 'status', l: 'Status', opts: ['Active', 'Inactive'] }, { k: 'password', l: 'New password (leave empty to keep)', t: 'password' }],
     memCache.find(x => x.id === id), async v => { await api('/api/members/' + encodeURIComponent(id), 'PUT', v); loadTab('members'); }),
@@ -603,13 +625,37 @@ actions.doMemImport = () => run(async () => {
   $('#memPreview').innerHTML = `<b>${memRows.length} members saved.</b>`; $('#memFile').value = ''; memRows = []; loadTab('members');
 });
 
+// ---- notices, new arrivals, popular ----
+let dupGroups = [];
+async function loadNotices() {
+  try {
+    const n = await api('/api/announcements');
+    $('#notices').innerHTML = n.map(x => `<div class="notice"><b>${esc(x.title)}</b>${x.body ? `<div>${esc(x.body)}</div>` : ''}</div>`).join('');
+  } catch (e) { /* notices are optional */ }
+}
+async function loadShelf() {
+  try {
+    const pop = (await api('/api/popular')).map(p => ({ ...books.find(b => b.id === p.id), count: p.count })).filter(b => b.title);
+    const byDay = {}; books.forEach(b => { const d = String(b.created_at || '').slice(0, 10); (byDay[d] = byDay[d] || []).push(b); });
+    const cut = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
+    const fresh = Object.entries(byDay).filter(([d, a]) => d >= cut && a.length <= 50).flatMap(([, a]) => a).sort((a, b) => b.id - a.id).slice(0, 8);
+    const chips = a => a.map(b => `<button class="btn" data-act="pick" data-id="${b.id}">${esc(b.title)}</button>`).join('');
+    $('#shelf').innerHTML = (fresh.length ? `<div><b>New arrivals</b>${chips(fresh)}</div>` : '') + (pop.length ? `<div><b>Popular</b>${chips(pop)}</div>` : '');
+  } catch (e) { /* optional */ }
+}
+Object.assign(actions, {
+  pick: id => { const b = books.find(x => x.id == id); if (!b) return; $('#q').value = b.title; $('#cat').value = ''; renderBooks(); $('#list').scrollIntoView({ behavior: 'smooth' }); },
+  merge: i => confirm('Merge these into one book?') && run(async () => { const g = dupGroups[i]; await api('/api/books/merge', 'POST', { keepId: g[0].id, removeIds: g.slice(1).map(b => b.id) }); await loadBooks(); loadTab('dups'); }, 'Merged.'),
+  delNotice: id => run(async () => { await api('/api/announcements/' + id, 'DELETE'); await loadNotices(); loadTab('notices'); }, 'Notice deleted.')
+});
+
 // ---- stock check ----
 let stExp = 0, stLast = [], stMiss = [];
 const stSet = n => $('#stCount').textContent = `${n.toLocaleString()} of ${stExp.toLocaleString()} copies counted`;
 async function loadStock() {
   await run(async () => {
     const d = await api('/api/stock'), open = d.check && !d.check.closed_at;
-    stExp = books.reduce((a, b) => a + Math.max(0, (b.quantity || 1) - (b.borrowed_count || 0)), 0);
+    stExp = books.reduce((a, b) => a + Math.max(0, (b.quantity || 1) - (b.borrowed_count || 0) - (b.lost_count || 0)), 0);
     $('#stStart').hidden = open; $('#stRun').hidden = !open;
     if (open) { $('#stTitle').textContent = d.check.name; stSet(d.scanned); setTimeout(() => $('#stScan').focus(), 50); }
   });
@@ -735,6 +781,7 @@ const submit = (sel, url, done, msg) => $(sel).onsubmit = e => { e.preventDefaul
 submit('#bookForm', '/api/books', loadBooks, 'Book added.');
 submit('#memForm', '/api/members', () => loadTab('members'), 'Member added.');
 submit('#reqForm', '/api/requests', () => {}, 'Request sent to the librarian.');
+submit('#noticeForm', '/api/announcements', async () => { await loadNotices(); loadTab('notices'); }, 'Notice posted.');
 
 // ---- Tamil / English interface ----
 const TA = {
@@ -754,7 +801,7 @@ const TA = {
   'Past papers and notes': 'கடந்தகால வினாத்தாள்கள் மற்றும் குறிப்புகள்', 'Search': 'தேடல்', 'Grade / Exam': 'தரம் / பரீட்சை', 'Type': 'வகை', 'No papers found yet.': 'இன்னும் வினாத்தாள்கள் இல்லை.',
   'Dashboard': 'முகப்புப் பலகை', 'Add a book': 'புத்தகம் சேர்', 'Members': 'உறுப்பினர்கள்', 'Requests': 'கோரிக்கைகள்', 'Overdue': 'தாமதமானவை', 'History': 'வரலாறு',
   'Import Excel': 'Excel இறக்கு', 'Scan': 'ஸ்கேன்', 'Reservations': 'முன்பதிவுகள்', 'Reports': 'அறிக்கைகள்', 'Activity': 'செயல்பாடு', 'Print cards': 'அட்டைகள் அச்சிடு',
-  'Papers': 'வினாத்தாள்கள்', 'Stock check': 'இருப்பு சரிபார்ப்பு', 'Total books': 'மொத்த புத்தகங்கள்', 'Book titles': 'புத்தகத் தலைப்புகள்',
+  'Papers': 'வினாத்தாள்கள்', 'Duplicates': 'இரட்டைப் பதிவுகள்', 'Notices': 'அறிவிப்புகள்', 'New arrivals': 'புதிய வரவுகள்', 'Popular': 'பிரபலமானவை', 'Lost / damaged': 'தொலைந்தவை / சேதமடைந்தவை', 'Post notice': 'அறிவிப்பு வெளியிடு', 'Stock check': 'இருப்பு சரிபார்ப்பு', 'Total books': 'மொத்த புத்தகங்கள்', 'Book titles': 'புத்தகத் தலைப்புகள்',
   'Available books': 'கிடைக்கும் புத்தகங்கள்', 'Borrowed books': 'இரவல் புத்தகங்கள்', 'Overdue books': 'தாமதமான புத்தகங்கள்', 'Pending requests': 'நிலுவை கோரிக்கைகள்',
   'Download backup (Excel)': 'காப்புப் பிரதி பதிவிறக்கு (Excel)', 'Title': 'தலைப்பு', 'Category': 'வகை', 'Ledger number': 'பேரேட்டு எண்', 'Ledger No': 'பேரேட்டு எண்',
   'Copies': 'பிரதிகள்', 'PDF link (optional)': 'PDF இணைப்பு (விருப்பம்)', 'Add book': 'புத்தகம் சேர்', 'Member ID': 'உறுப்பினர் எண்', 'Full name': 'முழுப்பெயர்',
