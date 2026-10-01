@@ -5,6 +5,9 @@ const { createClient } = require('@supabase/supabase-js');
 const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 const SECRET = process.env.AUTH_SECRET || '';
 const FINE_PER_DAY = 20;
+// Borrowing rules: change the numbers here if you want different limits
+const LIMITS = { Student: { max: 3, days: 14 }, Teacher: { max: 10, days: 30 }, Librarian: { max: 10, days: 30 } };
+const limFor = m => LIMITS[(m || {}).role] || LIMITS.Student;
 const app = express();
 app.use(express.json());
 
@@ -55,6 +58,11 @@ const checkPw = (p, hs) => {
   return !!hx && crypto.timingSafeEqual(Buffer.from(hx, 'hex'), crypto.scryptSync(p, salt, 32));
 };
 const today = () => new Date().toISOString().slice(0, 10);
+const openCount = async id => {
+  const { count, error } = await db.from('history').select('*', { count: 'exact', head: true }).eq('borrower_id', id).is('return_date', null);
+  if (error) throw new Error(error.message);
+  return count || 0;
+};
 const lateDays = d => d ? Math.max(0, Math.ceil((new Date(today()) - new Date(d)) / 864e5)) : 0;
 const addDays = n => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
 
@@ -119,9 +127,11 @@ app.post('/api/books/:id/issue', auth('admin'), h(async (req, res) => {
   if ((book.borrowed_count || 0) >= (book.quantity || 1)) return res.status(400).json({ error: 'All copies of this book are already borrowed.' });
   const [m] = await q(db.from('members').select('*').ilike('id', req.body.borrowerId || ''));
   if (!m) return res.status(400).json({ error: 'No member found with that ID.' });
+  const lim = limFor(m);
+  if (await openCount(m.id) >= lim.max) return res.status(400).json({ error: `${m.name} already has ${lim.max} books (the limit for a ${m.role}).` });
   const open = await q(db.from('history').select('id').eq('book_id', book.id).eq('borrower_id', m.id).is('return_date', null));
   if (open.length) return res.status(400).json({ error: 'This member already has a copy of this book.' });
-  await q(db.from('history').insert({ book_id: book.id, book_title: book.title, borrower_name: m.name, borrower_id: m.id, issue_date: today(), due_date: addDays(14) }));
+  await q(db.from('history').insert({ book_id: book.id, book_title: book.title, borrower_name: m.name, borrower_id: m.id, issue_date: today(), due_date: addDays(lim.days) }));
   await db.from('reservations').update({ status: 'Fulfilled' }).eq('book_id', book.id).eq('member_id', m.id).eq('status', 'Waiting');
   await sync(book.id);
   res.json({ ok: true });
@@ -224,8 +234,9 @@ app.get('/api/my', auth(), h(async (req, res) => {
   if (!req.user.id) return res.json({ open: [], past: [] });
   const rows = await q(db.from('history').select('*').eq('borrower_id', req.user.id).order('id', { ascending: false }).limit(100));
   const open = rows.filter(r => !r.return_date).map(r => ({ ...r, late: lateDays(r.due_date), fine: lateDays(r.due_date) * FINE_PER_DAY }));
+  const [mem] = await q(db.from('members').select('role').eq('id', req.user.id));
   const reservations = await q(db.from('reservations').select('*').eq('member_id', req.user.id).eq('status', 'Waiting'));
-  res.json({ open, past: rows.filter(r => r.return_date).slice(0, 20), reservations });
+  res.json({ open, past: rows.filter(r => r.return_date).slice(0, 20), reservations, limit: limFor(mem) });
 }));
 
 app.post('/api/loans/:id/renew', auth(), h(async (req, res) => {
@@ -236,7 +247,8 @@ app.post('/api/loans/:id/renew', auth(), h(async (req, res) => {
   if (!admin && (l.renewals || 0) >= 2) return res.status(400).json({ error: 'A book can be renewed only 2 times.' });
   if (!admin && lateDays(l.due_date) > 0) return res.status(400).json({ error: 'This book is overdue. Please return it to the library.' });
   const base = l.due_date && l.due_date > today() ? l.due_date : today();
-  const due = new Date(new Date(base).getTime() + 14 * 864e5).toISOString().slice(0, 10);
+  const [mem] = await q(db.from('members').select('role').eq('id', l.borrower_id));
+  const due = new Date(new Date(base).getTime() + limFor(mem).days * 864e5).toISOString().slice(0, 10);
   await q(db.from('history').update({ due_date: due, renewals: (l.renewals || 0) + 1 }).eq('id', l.id));
   res.json({ ok: true, due_date: due });
 }));
@@ -291,7 +303,9 @@ app.post('/api/books/:id/scan', auth('admin'), h(async (req, res) => {
     return res.json({ action: 'returned', name: m.name, fine });
   }
   if ((book.borrowed_count || 0) >= (book.quantity || 1)) return res.status(400).json({ error: 'All copies of this book are borrowed.' });
-  const due = addDays(14);
+  const lim = limFor(m);
+  if (await openCount(m.id) >= lim.max) return res.status(400).json({ error: `${m.name} already has ${lim.max} books (the limit for a ${m.role}).` });
+  const due = addDays(lim.days);
   await q(db.from('history').insert({ book_id: book.id, book_title: book.title, borrower_name: m.name, borrower_id: m.id, issue_date: today(), due_date: due }));
   await db.from('reservations').update({ status: 'Fulfilled' }).eq('book_id', book.id).eq('member_id', m.id).eq('status', 'Waiting');
   await sync(book.id);
@@ -319,6 +333,19 @@ app.post('/api/upload-url', auth('admin'), h(async (req, res) => {
   const { data, error } = await db.storage.from('ebooks').createSignedUploadUrl(path);
   if (error) throw new Error(error.message + ' (create a public Storage bucket named "ebooks" in Supabase)');
   res.json({ path, token: data.token, publicUrl: db.storage.from('ebooks').getPublicUrl(path).data.publicUrl, url: process.env.SUPABASE_URL, anon: process.env.SUPABASE_ANON_KEY || '' });
+}));
+
+// ---- past papers and notes ----
+app.get('/api/papers', h(async (_req, res) => res.json(await fetchAll(() => db.from('papers').select('*').order('id', { ascending: false })))));
+app.post('/api/papers', auth('admin'), h(async (req, res) => {
+  const { title, grade, subject, year, kind, pdf_url } = req.body;
+  if (!title || !pdf_url) return res.status(400).json({ error: 'A title and a PDF (file or link) are required.' });
+  await q(db.from('papers').insert({ title, grade: grade || '', subject: subject || '', year: year || '', kind: kind || 'Past paper', pdf_url }));
+  res.status(201).json({ ok: true });
+}));
+app.delete('/api/papers/:id', auth('admin'), h(async (req, res) => {
+  await q(db.from('papers').delete().eq('id', req.params.id));
+  res.json({ ok: true });
 }));
 
 // ---- dashboard numbers ----
