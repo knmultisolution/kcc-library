@@ -78,6 +78,7 @@ footer b{color:#fff}
   <div class="name">Kilinochchi Central College<small>School Library</small></div>
   <nav>
     <button class="nb on" data-view="catalog">Catalogue</button>
+    <button class="nb" data-view="my" id="navMy" hidden>My books</button>
     <button class="nb" data-view="request" id="navReq" hidden>Request a book</button>
     <button class="nb" data-view="admin" id="navAdmin" hidden>Librarian desk</button>
     <button class="nb" id="navPw" hidden>Password</button>
@@ -96,6 +97,8 @@ footer b{color:#fff}
 
 <main>
   <section id="v-catalog" class="panel"><h2>Catalogue</h2><div class="pub" id="pubStats"></div><div id="list"></div></section>
+
+  <section id="v-my" class="panel" hidden><h2>My books</h2><div id="myList"></div><h2 style="margin-top:26px">Returned</h2><div id="myPast"></div></section>
 
   <section id="v-request" class="panel" hidden>
     <h2>Request a book</h2>
@@ -140,6 +143,8 @@ footer b{color:#fff}
         <label>Role<select name="role"><option>Student</option><option>Teacher</option><option>Librarian</option></select></label>
         <div style="align-self:end"><button class="btn p">Add member</button></div>
       </form>
+      <div style="margin-bottom:18px"><p style="color:var(--mute);margin:0 0 8px">Or import many members from Excel: <b>Member ID, Name, Email, Phone, Role</b></p>
+        <input type="file" id="memFile" accept=".xlsx,.xls,.csv"><div id="memPreview" style="margin-top:12px"></div></div>
       <div id="memList"></div>
     </div>
     <div id="t-requests" hidden></div>
@@ -208,8 +213,9 @@ const run = async (fn, ok) => { try { await fn(); if (ok) toast(ok); } catch (e)
 
 // ---- views ----
 function show(view) {
-  ['catalog', 'request', 'admin'].forEach(v => $('#v-' + v).hidden = v !== view);
+  ['catalog', 'my', 'request', 'admin'].forEach(v => $('#v-' + v).hidden = v !== view);
   $$('.nb[data-view]').forEach(b => b.classList.toggle('on', b.dataset.view === view));
+  if (view === 'my') loadMy();
   if (view === 'admin') loadTab(document.querySelector('.tab.on').dataset.tab);
 }
 $$('.nb[data-view]').forEach(b => b.onclick = () => show(b.dataset.view));
@@ -217,6 +223,7 @@ $$('.nb[data-view]').forEach(b => b.onclick = () => show(b.dataset.view));
 function refreshChrome() {
   $('#authBtn').textContent = me ? 'Sign out (' + me.name.split(' ')[0] + ')' : 'Sign in';
   $('#navReq').hidden = !me;
+  $('#navMy').hidden = !(me && me.memberId);
   $('#navPw').hidden = !(me && me.memberId);
   $('#navAdmin').hidden = !(me && me.role === 'admin');
   if (!me || (me.role !== 'admin' && !$('#v-admin').hidden)) show('catalog');
@@ -279,7 +286,15 @@ function waBtn(x) {
   const msg = `வணக்கம் ${x.borrower_name}, KCC நூலகத்தில் எடுத்த "${x.title}" புத்தகத்தை ${x.due_date} அன்று திருப்பித் தர வேண்டும். ${x.days} நாட்கள் தாமதமாகிவிட்டது (அபராதம் Rs. ${x.fine}). தயவுசெய்து விரைவில் திருப்பித் தரவும். நன்றி.\n\nHello ${x.borrower_name}, your library book "${x.title}" was due on ${x.due_date}. Please return it soon. Thank you.\n- Kilinochchi Central College Library`;
   return `<a class="btn p" target="_blank" rel="noopener" href="https://wa.me/${n}?text=${encodeURIComponent(msg)}">WhatsApp</a>`;
 }
-let memCache = [];
+let memCache = [], curLoans = [];
+const lateOf = d => d ? Math.max(0, Math.ceil((new Date(new Date().toISOString().slice(0, 10)) - new Date(d)) / 864e5)) : 0;
+function loadMy() {
+  run(async () => {
+    const d = await api('/api/my');
+    $('#myList').innerHTML = d.open.map(l => `<div class="row" style="grid-template-columns:2fr 1.5fr auto"><div><b>${esc(l.book_title)}</b><span class="m">Issued ${esc(l.issue_date)}${l.renewals ? ' · renewed ' + l.renewals + ' time(s)' : ''}</span></div><div>${l.late > 0 ? `<span class="chip b">${l.late} days late · Rs. ${l.fine}</span>` : `<span class="chip a">Due ${esc(l.due_date)}</span>`}</div><div class="acts">${l.late > 0 || l.renewals >= 2 ? '' : `<button class="btn p" data-act="renew" data-id="${l.id}">Renew 14 days</button>`}</div></div>`).join('') || '<div class="empty">You have no borrowed books right now.</div>';
+    $('#myPast').innerHTML = d.past.map(l => `<div class="row" style="grid-template-columns:2fr 1.5fr auto"><div><b>${esc(l.book_title)}</b></div><div class="m">Returned ${esc(l.return_date)}</div><div>${l.fine_amount > 0 ? (l.fine_paid ? '<span class="chip a">Fine paid</span>' : `<span class="chip b">Fine Rs. ${l.fine_amount}</span>`) : ''}</div></div>`).join('') || '<div class="empty">No returned books yet.</div>';
+  });
+}
 function openEdit(title, fields, vals, save) {
   $('#editTitle').textContent = title;
   $('#editFields').innerHTML = fields.map(f => `<label>${f.l}${f.opts
@@ -345,7 +360,9 @@ function loadTab(tab) {
   });
   if (tab === 'overdue') run(async () => {
     const f = await api('/api/fines');
-    $('#t-overdue').innerHTML = f.map(x => `<div class="row"><div><b>${esc(x.title)}</b><span class="m">${esc(x.borrower_name)} (${esc(x.borrower_id)})</span></div><div class="cat m">Due ${esc(x.due_date)}</div><div><span class="chip b">${x.days} days late</span></div><div><b>Rs. ${x.fine}</b><br>${waBtn(x)}</div></div>`).join('') || '<div class="empty">No overdue books.</div>';
+    const u = await api('/api/fines/unpaid');
+    const unpaid = '<h3 style="margin:24px 0 4px">Returned late, fine not paid</h3>' + (u.map(x => `<div class="row"><div><b>${esc(x.book_title)}</b><span class="m">${esc(x.borrower_name)} (${esc(x.borrower_id)})</span></div><div class="cat m">Returned ${esc(x.return_date)}</div><div><b>Rs. ${x.fine_amount}</b></div><div class="acts"><button class="btn p" data-act="paid" data-id="${x.id}">Mark paid</button></div></div>`).join('') || '<div class="empty">No unpaid fines.</div>');
+    $('#t-overdue').innerHTML = (f.map(x => `<div class="row"><div><b>${esc(x.title)}</b><span class="m">${esc(x.borrower_name)} (${esc(x.borrower_id)})</span></div><div class="cat m">Due ${esc(x.due_date)}</div><div><span class="chip b">${x.days} days late</span></div><div><b>Rs. ${x.fine}</b><br>${waBtn(x)}</div></div>`).join('') || '<div class="empty">No overdue books.</div>') + unpaid;
   });
   if (tab === 'history') run(async () => {
     const h = await api('/api/history');
@@ -360,12 +377,22 @@ const actions = {
     await api(`/api/books/${id}/issue`, 'POST', { borrowerId }); await loadBooks();
   }, 'Book issued for 14 days.'),
   returnBook: id => run(async () => {
-    const loans = await api(`/api/books/${id}/loans`), b = books.find(x => x.id == id);
-    $('#loanTitle').textContent = b.title;
-    $('#loanList').innerHTML = loans.map(l => `<div class="row" style="grid-template-columns:1fr auto"><div><b>${esc(l.borrower_name)}</b><span class="m">${esc(l.borrower_id)} &nbsp;·&nbsp; due ${esc(l.due_date || '-')}</span></div><div><button class="btn p" data-act="returnLoan" data-id="${l.id}">Return</button></div></div>`).join('') || '<div class="empty">No open loans.</div>';
+    curLoans = await api(`/api/books/${id}/loans`);
+    $('#loanTitle').textContent = books.find(x => x.id == id).title;
+    $('#loanList').innerHTML = curLoans.map(l => {
+      const late = lateOf(l.due_date);
+      return `<div class="row" style="grid-template-columns:1fr auto"><div><b>${esc(l.borrower_name)}</b><span class="m">${esc(l.borrower_id)} &nbsp;·&nbsp; due ${esc(l.due_date || '-')}${late ? ` &nbsp;·&nbsp; <b style="color:var(--warn)">${late} days late, Rs. ${late * 20}</b>` : ''}</span></div><div class="acts"><button class="btn" data-act="renewLoan" data-id="${l.id}">Renew</button><button class="btn p" data-act="returnLoan" data-id="${l.id}">Return</button></div></div>`;
+    }).join('') || '<div class="empty">No open loans.</div>';
     $('#loanDlg').showModal();
   }),
-  returnLoan: id => run(async () => { await api(`/api/loans/${id}/return`, 'POST'); $('#loanDlg').close(); await loadBooks(); }, 'Book returned.'),
+  returnLoan: id => run(async () => {
+    const l = curLoans.find(x => x.id == id), fine = lateOf(l.due_date) * 20;
+    const finePaid = fine > 0 && confirm(`Fine: Rs. ${fine} (${lateOf(l.due_date)} days late).\n\nOK = fine collected\nCancel = not paid yet`);
+    await api(`/api/loans/${id}/return`, 'POST', { finePaid }); $('#loanDlg').close(); await loadBooks();
+  }, 'Book returned.'),
+  renewLoan: id => run(async () => { await api(`/api/loans/${id}/renew`, 'POST'); $('#loanDlg').close(); await loadBooks(); }, 'Renewed for 14 more days.'),
+  renew: id => run(async () => { await api(`/api/loans/${id}/renew`, 'POST'); loadMy(); }, 'Renewed for 14 more days.'),
+  paid: id => run(async () => { await api(`/api/loans/${id}/paid`, 'POST'); loadTab('overdue'); }, 'Fine marked as paid.'),
   editBook: id => openEdit('Edit book', [{ k: 'title', l: 'Title', r: 1 }, { k: 'author', l: 'Author' }, { k: 'category', l: 'Category' }, { k: 'ledger_info', l: 'Ledger No' }, { k: 'quantity', l: 'Copies', t: 'number' }, { k: 'pdf_url', l: 'PDF link' }],
     books.find(x => x.id == id), async v => { await api('/api/books/' + id, 'PUT', v); await loadBooks(); }),
   editMember: id => openEdit('Edit member', [{ k: 'name', l: 'Full name', r: 1 }, { k: 'email', l: 'Email' }, { k: 'phone', l: 'Phone (WhatsApp)' }, { k: 'role', l: 'Role', opts: ['Student', 'Teacher', 'Librarian'] }, { k: 'status', l: 'Status', opts: ['Active', 'Inactive'] }, { k: 'password', l: 'New password (leave empty to keep)', t: 'password' }],
@@ -414,6 +441,28 @@ actions.doImport = () => run(async () => {
     $('#xlsPreview').innerHTML = `<b>Uploading... ${done} / ${importRows.length}</b>`;
   }
   $('#xlsPreview').innerHTML = `<b>${done} books add aagiduchu.</b>`; $('#xlsFile').value = ''; importRows = []; await loadBooks();
+});
+
+// ---- Members Excel import ----
+const MALIAS = { id: ['member id', 'id', 'index no', 'admission no', 'memberid'], name: ['name', 'full name', 'student name'], email: ['email', 'e-mail'], phone: ['phone', 'mobile', 'whatsapp', 'phone number'], role: ['role', 'type'] };
+let memRows = [];
+$('#memFile').onchange = e => run(async () => {
+  const f = e.target.files[0]; if (!f) return;
+  const wb = XLSX.read(await f.arrayBuffer());
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' });
+  const head = (rows[0] || []).map(x => String(x).trim().toLowerCase());
+  let idx = {}; for (const k in MALIAS) idx[k] = head.findIndex(x => MALIAS[k].includes(x));
+  let body = rows.slice(1);
+  if (idx.id < 0 || idx.name < 0) { idx = { id: 0, name: 1, email: 2, phone: 3, role: 4 }; body = rows; }
+  const get = (r, k) => idx[k] >= 0 ? String(r[idx[k]] ?? '').trim() : '';
+  memRows = body.map(r => ({ id: get(r, 'id'), name: get(r, 'name'), email: get(r, 'email'), phone: get(r, 'phone'), role: get(r, 'role') })).filter(r => r.id && r.name);
+  $('#memPreview').innerHTML = memRows.length
+    ? `<b>${memRows.length} members found.</b>` + memRows.slice(0, 4).map(r => `<div class="row"><div><b>${esc(r.name)}</b><span class="m">${esc(r.id)}</span></div><div class="cat m">${esc(r.role || 'Student')}</div><div class="m">${esc(r.phone)}</div><div></div></div>`).join('') + `<div style="margin-top:12px"><button class="btn p" data-act="doMemImport">Import ${memRows.length} members</button></div>`
+    : '<div class="empty">No members found. Each row needs a Member ID and a Name.</div>';
+});
+actions.doMemImport = () => run(async () => {
+  for (let i = 0; i < memRows.length; i += 200) await api('/api/members/bulk', 'POST', { members: memRows.slice(i, i + 200) });
+  $('#memPreview').innerHTML = `<b>${memRows.length} members saved.</b>`; $('#memFile').value = ''; memRows = []; loadTab('members');
 });
 
 // ---- forms ----
