@@ -312,6 +312,15 @@ app.get('/api/reports', auth('admin'), h(async (_req, res) => {
 app.get('/api/audit', auth('admin'), h(async (_req, res) =>
   res.json(await q(db.from('audit').select('*').order('id', { ascending: false }).limit(200)))));
 
+// ---- PDF e-book upload (signed URL into the public "ebooks" bucket) ----
+app.post('/api/upload-url', auth('admin'), h(async (req, res) => {
+  const name = String(req.body.filename || 'book.pdf').replace(/[^\w.\-]+/g, '_');
+  const path = `${Date.now()}-${name}`;
+  const { data, error } = await db.storage.from('ebooks').createSignedUploadUrl(path);
+  if (error) throw new Error(error.message + ' (create a public Storage bucket named "ebooks" in Supabase)');
+  res.json({ path, token: data.token, publicUrl: db.storage.from('ebooks').getPublicUrl(path).data.publicUrl, url: process.env.SUPABASE_URL, anon: process.env.SUPABASE_ANON_KEY || '' });
+}));
+
 // ---- dashboard numbers ----
 app.get('/api/stats', auth('admin'), h(async (_req, res) => {
   const cnt = async p => { const { count, error } = await p; if (error) throw new Error(error.message); return count || 0; };
