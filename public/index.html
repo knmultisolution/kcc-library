@@ -67,10 +67,26 @@ footer b{color:#fff}
 .stat.ok{border-left-color:var(--ok)}.stat.warn{border-left-color:var(--warn)}.stat.gate{border-left-color:var(--gate)}
 .pub{color:var(--mute);margin:-6px 0 8px;font-size:15px}.pub b{color:var(--ink)}
 @media print{header.bar,.hero,footer,.tabs,.btn,.nb,#toast{display:none!important}main{padding:0}.panel{border:0;padding:0}}
+#printArea{display:none}
+.g2{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.cards{grid-template-columns:repeat(2,85.6mm);gap:4mm}
+.idc{width:85.6mm;height:54mm;border:1px solid #999;border-radius:3mm;overflow:hidden;break-inside:avoid;background:#fff;color:#000}
+.idh{background:#2b3036;color:#fff;display:flex;align-items:center;gap:3mm;padding:2mm 3mm;font-size:9pt;line-height:1.2;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.idh img{height:11mm}
+.idb{padding:2mm 3mm;text-align:center}.idn{font-weight:700;font-size:12pt}.idr{font-size:9pt;color:#444;margin-bottom:1mm}
+.labels{grid-template-columns:repeat(4,47mm);gap:2mm}
+.lb{width:47mm;height:26mm;border:1px dashed #aaa;padding:1mm;text-align:center;overflow:hidden;break-inside:avoid;font-size:7.5pt;line-height:1.15;color:#000}
+.lb svg{max-width:100%;height:auto}.lb b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media print{body.pr>*:not(#printArea){display:none!important}body.pr #printArea{display:grid}@page{margin:8mm}}
 [hidden]{display:none!important}
 @media(max-width:720px){.row{grid-template-columns:1fr auto}.row .cat{display:none}.bar nav{margin-left:0;width:100%}}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="theme-color" content="#2b3036">
 </head>
 <body>
 
@@ -125,6 +141,7 @@ footer b{color:#fff}
       <button class="tab" data-tab="resv">Reservations</button>
       <button class="tab" data-tab="reports">Reports</button>
       <button class="tab" data-tab="audit">Activity</button>
+      <button class="tab" data-tab="print">Print cards</button>
     </div>
     <div id="t-dash"><div class="stats" id="stats"></div>
       <div style="margin-top:18px"><button class="btn p" data-act="backup">Download backup (Excel)</button></div></div>
@@ -163,6 +180,18 @@ footer b{color:#fff}
       </div>
       <div style="margin:12px 0"><button class="btn" data-act="camBook">Scan book with camera</button> <button class="btn" data-act="camMem">Scan member ID with camera</button></div>
       <div id="scInfo"></div>
+    </div>
+    <div id="t-print" hidden>
+      <h3 style="margin-top:0">Member ID cards</h3>
+      <div class="g2"><label>Who<select id="pcRole"><option value="">All members</option><option>Student</option><option>Teacher</option><option>Librarian</option></select></label>
+        <label>Or one Member ID<input id="pcOne"></label>
+        <div style="align-self:end"><button class="btn p" data-act="printCards">Print ID cards</button></div></div>
+      <h3 style="margin-top:28px">Book barcode labels</h3>
+      <div class="g2"><label>Category<select id="plCat"></select></label>
+        <label>From book no.<input id="plFrom" type="number" min="1" value="1"></label>
+        <label>To book no.<input id="plTo" type="number" min="1" value="60"></label>
+        <div style="align-self:end"><button class="btn p" data-act="printLabels">Print labels</button></div></div>
+      <p style="color:var(--mute)">Print about 60 labels at a time (From 1 To 60, then 61 to 120 ...). In the print window choose A4 and turn on "Background graphics".</p>
     </div>
     <div id="t-resv" hidden></div>
     <div id="t-reports" hidden></div>
@@ -209,6 +238,9 @@ footer b{color:#fff}
   <div id="loanList"></div>
   <div class="acts"><button class="btn" onclick="$('#loanDlg').close()">Close</button></div>
 </dialog>
+
+<div id="printArea"></div>
+<input type="file" id="pdfPick" accept="application/pdf" hidden>
 
 <div id="toast" role="status"></div>
 
@@ -348,6 +380,7 @@ function renderBooks() {
         ${admin ? `${left(b) > 0 ? `<button class="btn p" data-act="issue" data-id="${b.id}">Issue</button>` : ''}
                    ${(b.borrowed_count || 0) > 0 ? `<button class="btn" data-act="returnBook" data-id="${b.id}">Return</button>` : ''}
                    <button class="btn" data-act="editBook" data-id="${b.id}">Edit</button>
+                   <button class="btn" data-act="uploadPdf" data-id="${b.id}">PDF</button>
                    <button class="btn d" data-act="delBook" data-id="${b.id}">Delete</button>` : ''}
       </div>
     </div>`).join('') + (all.length > 100 ? `<div class="empty">Showing 100 of ${all.length} books. Type more letters to narrow your search.</div>` : '') : '<div class="empty">No books match your search. Try a different spelling, or search in Tamil or English.</div>';
@@ -368,12 +401,13 @@ $$('.tab').forEach(b => b.onclick = () => {
   $$('.tab').forEach(x => x.classList.toggle('on', x === b)); loadTab(b.dataset.tab);
 });
 function loadTab(tab) {
-  ['dash', 'add', 'members', 'requests', 'overdue', 'history', 'import', 'scan', 'resv', 'reports', 'audit'].forEach(t => $('#t-' + t).hidden = t !== tab);
+  ['dash', 'add', 'members', 'requests', 'overdue', 'history', 'import', 'scan', 'resv', 'reports', 'audit', 'print'].forEach(t => $('#t-' + t).hidden = t !== tab);
   if (tab === 'dash') run(async () => {
     const d = await api('/api/stats'), n = x => Number(x).toLocaleString();
     const card = (v, l, c = '') => `<div class="stat ${c}"><b>${n(v)}</b><span>${l}</span></div>`;
     $('#stats').innerHTML = card(d.copies, 'Total books') + card(d.titles, 'Book titles') + card(d.available, 'Available books', 'ok') + card(d.borrowed, 'Borrowed books', 'gate') + card(d.overdue, 'Overdue books', 'warn') + card(d.members, 'Members') + card(d.requests, 'Pending requests');
   });
+  if (tab === 'print') $('#plCat').innerHTML = '<option value="">All categories</option>' + [...new Set(books.map(b => b.category))].sort().map(c => `<option>${esc(c)}</option>`).join('');
   if (tab === 'scan') setTimeout(() => $('#scBook').focus(), 50);
   if (tab === 'resv') run(async () => {
     const r = await api('/api/reservations');
@@ -449,6 +483,20 @@ const actions = {
     [['Books', bk], ['Members', mm], ['Loans', hh]].forEach(([n, d]) => XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(d), n));
     XLSX.writeFile(wb, `kcc-library-backup-${new Date().toISOString().slice(0, 10)}.xlsx`);
   }, 'Backup downloaded.'),
+  printCards: () => run(async () => {
+    memCache = await api('/api/members');
+    const role = $('#pcRole').value, one = $('#pcOne').value.trim().toLowerCase();
+    const list = memCache.filter(x => x.status !== 'Inactive' && (!role || x.role === role) && (!one || x.id.toLowerCase() === one));
+    if (!list.length) throw new Error('No members to print.');
+    doPrint(list.map(x => `<div class="idc"><div class="idh"><img src="kccl.png" alt=""><div><b>Kilinochchi Central College</b><br>School Library</div></div><div class="idb"><div class="idn">${esc(x.name)}</div><div class="idr">${esc(x.role)} &nbsp;·&nbsp; ${esc(x.id)}</div><svg class="bc" data-v="${esc(x.id)}"></svg></div></div>`).join(''), 'cards');
+  }),
+  printLabels: () => run(async () => {
+    const c = $('#plCat').value, f = Math.max(1, +$('#plFrom').value || 1), t = +$('#plTo').value || 60;
+    const list = books.filter(b => (!c || b.category === c) && b.barcode).slice(f - 1, t);
+    if (!list.length) throw new Error('No books with barcodes in that range.');
+    doPrint(list.map(b => `<div class="lb"><svg class="bc" data-v="${esc(b.barcode)}"></svg><b>${esc(b.title)}</b>${esc(b.ledger_info && b.ledger_info !== 'N/A' ? b.ledger_info : '')}</div>`).join(''), 'labels');
+  }),
+  uploadPdf: id => { pdfTarget = id; $('#pdfPick').click(); },
   reserve: id => run(async () => { await api(`/api/books/${id}/reserve`, 'POST'); }, 'Reserved. The library will tell you when it is available.'),
   cancelResv: id => run(async () => { await api('/api/reservations/' + id, 'DELETE'); if (!$('#v-my').hidden) loadMy(); else loadTab('resv'); }, 'Reservation cancelled.'),
   camBook: () => camScan($('#scBook')),
@@ -515,6 +563,26 @@ actions.doMemImport = () => run(async () => {
   $('#memPreview').innerHTML = `<b>${memRows.length} members saved.</b>`; $('#memFile').value = ''; memRows = []; loadTab('members');
 });
 
+// ---- printing and PDF upload ----
+function doPrint(html, cls) {
+  if (!window.JsBarcode) throw new Error('Barcode library did not load. Check your internet and try again.');
+  const a = $('#printArea'); a.className = cls; a.innerHTML = html;
+  $$('#printArea svg.bc').forEach(s => JsBarcode(s, s.dataset.v, { format: 'CODE128', height: cls === 'cards' ? 34 : 26, fontSize: 11, margin: 2, displayValue: true }));
+  document.body.classList.add('pr');
+  setTimeout(() => { window.print(); document.body.classList.remove('pr'); }, 500);
+}
+let pdfTarget = null;
+$('#pdfPick').onchange = e => run(async () => {
+  const f = e.target.files[0]; if (!f || !pdfTarget) return;
+  toast('Uploading PDF, please wait...');
+  const b = books.find(x => x.id == pdfTarget), info = await api('/api/upload-url', 'POST', { filename: f.name });
+  if (!info.anon) throw new Error('Add SUPABASE_ANON_KEY in the Vercel settings first.');
+  const sb = supabase.createClient(info.url, info.anon);
+  const { error } = await sb.storage.from('ebooks').uploadToSignedUrl(info.path, info.token, f, { contentType: 'application/pdf' });
+  if (error) throw new Error(error.message);
+  await api('/api/books/' + b.id, 'PUT', { ...b, pdf_url: info.publicUrl }); e.target.value = ''; await loadBooks();
+}, 'PDF uploaded. Members can now read it.');
+
 // ---- barcode scan ----
 let scanBook = null;
 async function camScan(target) {
@@ -558,6 +626,7 @@ submit('#bookForm', '/api/books', loadBooks, 'Book added.');
 submit('#memForm', '/api/members', () => loadTab('members'), 'Member added.');
 submit('#reqForm', '/api/requests', () => {}, 'Request sent to the librarian.');
 
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 refreshChrome(); loadBooks();
 </script>
 </body>
