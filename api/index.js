@@ -36,19 +36,24 @@ const fetchAll = async build => {
     from += 1000;
   }
 };
+const hashPw = p => { const salt = crypto.randomBytes(8).toString('hex'); return salt + ':' + crypto.scryptSync(p, salt, 32).toString('hex'); };
+const checkPw = (p, hs) => {
+  const [salt, hx] = (hs || '').split(':');
+  return !!hx && crypto.timingSafeEqual(Buffer.from(hx, 'hex'), crypto.scryptSync(p, salt, 32));
+};
 const today = () => new Date().toISOString().slice(0, 10);
 const addDays = n => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
 
 // ---- auth ----
 app.post('/api/login', h(async (req, res) => {
   const { username = '', password = '' } = req.body;
-  const token = (name, role) => ({ success: true, name, role, token: sign({ name, role, exp: Date.now() + 12 * 36e5 }) });
+  const token = (name, role, id) => ({ success: true, name, role, memberId: id, token: sign({ name, role, id, exp: Date.now() + 12 * 36e5 }) });
   if (process.env.ADMIN_USER && username === process.env.ADMIN_USER && password === process.env.ADMIN_PASS)
     return res.json(token(username, 'admin'));
   const members = await q(db.from('members').select('*').or(`id.ilike.${username.replace(/[,()]/g, '')},name.ilike.${username.replace(/[,()]/g, '')}`));
-  const m = members.find(x => x.status === 'Active' && x.id.toLowerCase() === password.toLowerCase());
+  const m = members.find(x => x.status === 'Active' && (x.pw_hash ? checkPw(password, x.pw_hash) : x.id.toLowerCase() === password.toLowerCase()));
   if (!m) return res.status(401).json({ error: 'Name or member ID is incorrect.' });
-  res.json({ ...token(m.name, 'user'), memberId: m.id });
+  res.json(token(m.name, m.role === 'Librarian' ? 'admin' : 'user', m.id));
 }));
 
 // ---- books ----
@@ -118,11 +123,12 @@ app.post('/api/loans/:id/return', auth('admin'), h(async (req, res) => {
   res.json({ ok: true });
 }));
 
-app.get('/api/history', auth('admin'), h(async (_req, res) =>
-  res.json(await q(db.from('history').select('*').order('id', { ascending: false }).limit(200)))));
+app.get('/api/history', auth('admin'), h(async (req, res) =>
+  res.json(req.query.all ? await fetchAll(() => db.from('history').select('*').order('id')) : await q(db.from('history').select('*').order('id', { ascending: false }).limit(200)))));
 
 // ---- members ----
-app.get('/api/members', auth('admin'), h(async (_req, res) => res.json(await q(db.from('members').select('*').order('name')))));
+app.get('/api/members', auth('admin'), h(async (_req, res) =>
+  res.json((await q(db.from('members').select('*').order('name'))).map(({ pw_hash, ...m }) => ({ ...m, has_password: !!pw_hash })))));
 
 app.post('/api/members', auth('admin'), h(async (req, res) => {
   const { id, name, email, phone, role } = req.body;
@@ -155,6 +161,35 @@ app.post('/api/requests/:id/approve', auth('admin'), h(async (req, res) => {
 
 app.delete('/api/requests/:id', auth('admin'), h(async (req, res) => {
   await q(db.from('requests').delete().eq('id', req.params.id));
+  res.json({ ok: true });
+}));
+
+// ---- edit books / members, change password ----
+app.put('/api/books/:id', auth('admin'), h(async (req, res) => {
+  const { title, author, category, ledger_info, quantity, pdf_url } = req.body;
+  if (!title) return res.status(400).json({ error: 'Title is required.' });
+  await q(db.from('books').update({ title, author: author || 'N/A', category: category || 'General', ledger_info: ledger_info || 'N/A', quantity: Math.max(1, parseInt(quantity) || 1), pdf_url: pdf_url || '' }).eq('id', req.params.id));
+  await sync(req.params.id);
+  res.json({ ok: true });
+}));
+
+app.put('/api/members/:id', auth('admin'), h(async (req, res) => {
+  const { name, email, phone, role, status, password } = req.body;
+  if (!name) return res.status(400).json({ error: 'Name is required.' });
+  const upd = { name, email: email || '', phone: phone || '', role: role || 'Student', status: status || 'Active' };
+  if (password) upd.pw_hash = hashPw(password);
+  await q(db.from('members').update(upd).eq('id', req.params.id));
+  res.json({ ok: true });
+}));
+
+app.post('/api/password', auth(), h(async (req, res) => {
+  const { current = '', next = '' } = req.body;
+  if (!req.user.id) return res.status(400).json({ error: 'The main admin password is changed in Vercel settings.' });
+  if (next.length < 4) return res.status(400).json({ error: 'New password needs at least 4 characters.' });
+  const [m] = await q(db.from('members').select('*').eq('id', req.user.id));
+  const ok = m && (m.pw_hash ? checkPw(current, m.pw_hash) : current.toLowerCase() === m.id.toLowerCase());
+  if (!ok) return res.status(400).json({ error: 'Current password is wrong.' });
+  await q(db.from('members').update({ pw_hash: hashPw(next) }).eq('id', m.id));
   res.json({ ok: true });
 }));
 
