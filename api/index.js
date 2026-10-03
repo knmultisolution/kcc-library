@@ -15,6 +15,7 @@ async function loadSettings(force) {
   settingsAt = Date.now();
   const { data } = await db.from('settings').select('*');
   const v = {}; (data || []).forEach(r => v[r.key] = +r.value);
+  const hol = await db.from('holidays').select('day'); HOLIDAYS = new Set((hol.data || []).map(x => x.day));
   if (v.fine_per_day >= 0) FINE_PER_DAY = v.fine_per_day;
   if (v.read_goal > 0) READ_GOAL = v.read_goal;
   if (v.student_max > 0) LIMITS.Student.max = v.student_max;
@@ -33,7 +34,7 @@ app.use(async (_req, _res, next) => { try { await loadSettings(); } catch (e) { 
 
 // activity log: every successful change is recorded
 app.use((req, res, next) => {
-  if (req.method !== 'GET' && req.path !== '/api/login') {
+  if (req.method !== 'GET' && req.path !== '/api/login' && req.path !== '/api/parent') {
     res.on('finish', () => {
       if (res.statusCode >= 400) return;
       const u = verify((req.headers.authorization || '').replace('Bearer ', ''));
@@ -88,6 +89,17 @@ const openCount = async id => {
   return count || 0;
 };
 const lateDays = d => d ? Math.max(0, Math.ceil((new Date(today()) - new Date(d)) / 864e5)) : 0;
+let HOLIDAYS = new Set();
+// next working day: skips Saturday, Sunday and the holidays set by the librarian
+const workday = d => {
+  let t = new Date(d + 'T00:00:00Z');
+  for (let i = 0; i < 30; i++) {
+    const k = t.toISOString().slice(0, 10), wd = t.getUTCDay();
+    if (wd !== 0 && wd !== 6 && !HOLIDAYS.has(k)) return k;
+    t = new Date(t.getTime() + 864e5);
+  }
+  return d;
+};
 const addDays = n => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
 
 // ---- auth ----
@@ -161,7 +173,7 @@ app.post('/api/books/:id/issue', auth('admin'), h(async (req, res) => {
   if (await openCount(m.id) >= lim.max) return res.status(400).json({ error: `${m.name} already has ${lim.max} books (the limit for a ${m.role}).` });
   const open = await q(db.from('history').select('id').eq('book_id', book.id).eq('borrower_id', m.id).is('return_date', null));
   if (open.length) return res.status(400).json({ error: 'This member already has a copy of this book.' });
-  await q(db.from('history').insert({ book_id: book.id, book_title: book.title, borrower_name: m.name, borrower_id: m.id, issue_date: today(), due_date: addDays(lim.days) }));
+  await q(db.from('history').insert({ book_id: book.id, book_title: book.title, borrower_name: m.name, borrower_id: m.id, issue_date: today(), due_date: workday(addDays(lim.days)) }));
   await db.from('reservations').update({ status: 'Fulfilled' }).eq('book_id', book.id).eq('member_id', m.id).eq('status', 'Waiting');
   await sync(book.id);
   res.json({ ok: true });
@@ -283,7 +295,7 @@ app.post('/api/loans/:id/renew', auth(), h(async (req, res) => {
   if (!admin && lateDays(l.due_date) > 0) return res.status(400).json({ error: 'This book is overdue. Please return it to the library.' });
   const base = l.due_date && l.due_date > today() ? l.due_date : today();
   const [mem] = await q(db.from('members').select('role').eq('id', l.borrower_id));
-  const due = new Date(new Date(base).getTime() + limFor(mem).days * 864e5).toISOString().slice(0, 10);
+  const due = workday(new Date(new Date(base).getTime() + limFor(mem).days * 864e5).toISOString().slice(0, 10));
   await q(db.from('history').update({ due_date: due, renewals: (l.renewals || 0) + 1 }).eq('id', l.id));
   res.json({ ok: true, due_date: due });
 }));
@@ -340,7 +352,7 @@ app.post('/api/books/:id/scan', auth('admin'), h(async (req, res) => {
   if ((book.borrowed_count || 0) + (book.lost_count || 0) >= (book.quantity || 1)) return res.status(400).json({ error: 'No copy of this book is available.' });
   const lim = limFor(m);
   if (await openCount(m.id) >= lim.max) return res.status(400).json({ error: `${m.name} already has ${lim.max} books (the limit for a ${m.role}).` });
-  const due = addDays(lim.days);
+  const due = workday(addDays(lim.days));
   await q(db.from('history').insert({ book_id: book.id, book_title: book.title, borrower_name: m.name, borrower_id: m.id, issue_date: today(), due_date: due }));
   await db.from('reservations').update({ status: 'Fulfilled' }).eq('book_id', book.id).eq('member_id', m.id).eq('status', 'Waiting');
   await sync(book.id);
@@ -608,6 +620,53 @@ app.post('/api/trash/:id/restore', auth('admin'), h(async (req, res) => {
 }));
 app.delete('/api/trash/:id', auth('admin'), h(async (req, res) => {
   await q(db.from('trash').delete().eq('id', req.params.id));
+  res.json({ ok: true });
+}));
+
+// ---- holidays, parent view, book of the week ----
+app.get('/api/holidays', auth('admin'), h(async (_req, res) => res.json(await q(db.from('holidays').select('*').order('day')))));
+app.post('/api/holidays', auth('admin'), h(async (req, res) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(req.body.day || '')) return res.status(400).json({ error: 'Choose a date.' });
+  await q(db.from('holidays').upsert({ day: req.body.day, name: req.body.name || 'Holiday' }, { onConflict: 'day' }));
+  await loadSettings(true);
+  res.status(201).json({ ok: true });
+}));
+app.delete('/api/holidays/:id', auth('admin'), h(async (req, res) => {
+  await q(db.from('holidays').delete().eq('id', req.params.id));
+  await loadSettings(true);
+  res.json({ ok: true });
+}));
+
+app.post('/api/parent', h(async (req, res) => {
+  const id = String(req.body.memberId || '').trim().replace(/[%_]/g, ''), p4 = String(req.body.phone4 || '').replace(/\D/g, '').slice(-4);
+  const who = 'parent:' + id.toLowerCase().slice(0, 40);
+  const since = new Date(Date.now() - 10 * 60000).toISOString();
+  const { count } = await db.from('login_attempts').select('*', { count: 'exact', head: true }).eq('who', who).gt('at', since);
+  if ((count || 0) >= 5) return res.status(429).json({ error: 'Too many wrong attempts. Please try again in 10 minutes.' });
+  const [m] = id ? await q(db.from('members').select('*').ilike('id', id)) : [];
+  const phone = String((m && m.phone) || '').replace(/\D/g, '');
+  if (!m || m.status === 'Inactive' || p4.length !== 4 || !phone.endsWith(p4)) {
+    await db.from('login_attempts').insert({ who });
+    return res.status(401).json({ error: 'Member ID or phone digits are not correct.' });
+  }
+  const loans = await q(db.from('history').select('*').eq('borrower_id', m.id).order('id', { ascending: false }).limit(30));
+  res.json({
+    name: m.name, class_name: m.class_name || '',
+    open: loans.filter(l => !l.return_date).map(l => ({ title: l.book_title, due_date: l.due_date, late: lateDays(l.due_date), fine: lateDays(l.due_date) * FINE_PER_DAY })),
+    unpaid: loans.filter(l => l.fine_amount > 0 && !l.fine_paid).reduce((a, l) => a + l.fine_amount, 0),
+    recent: loans.filter(l => l.return_date).slice(0, 5).map(l => ({ title: l.book_title, return_date: l.return_date }))
+  });
+}));
+
+app.get('/api/featured', h(async (_req, res) => {
+  const rows = await q(db.from('settings').select('*').in('key', ['featured_book', 'featured_note']));
+  const o = {}; rows.forEach(r => o[r.key] = r.value);
+  res.json({ book_id: +o.featured_book || 0, note: o.featured_note || '' });
+}));
+app.put('/api/featured', auth('admin'), h(async (req, res) => {
+  const id = +req.body.bookId || 0;
+  if (!id) await q(db.from('settings').delete().in('key', ['featured_book', 'featured_note']));
+  else await q(db.from('settings').upsert([{ key: 'featured_book', value: String(id) }, { key: 'featured_note', value: String(req.body.note || '').slice(0, 200) }], { onConflict: 'key' }));
   res.json({ ok: true });
 }));
 
