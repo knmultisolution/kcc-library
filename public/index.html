@@ -71,6 +71,7 @@ footer b{color:#fff}
 .pub{color:var(--mute);margin:-6px 0 8px;font-size:15px}.pub b{color:var(--ink)}
 @media print{header.bar,.hero,footer,.tabs,.btn,.nb,#toast{display:none!important}main{padding:0}.panel{border:0;padding:0}}
 #printArea{display:none}
+.ptab{border-collapse:collapse;width:100%;font-size:10pt;color:#000}.ptab th,.ptab td{border:1px solid #888;padding:3px 6px;text-align:left}
 .certbox{border:6px double #2b3036;padding:18mm 14mm;text-align:center;margin:8mm auto;width:170mm;color:#000}
 .certbox img{height:34mm}.certbox h1{font-size:30pt;margin:6mm 0 2mm}.certbox h2{font-size:26pt;margin:6mm 0;border-bottom:1px solid #999;display:inline-block;padding:0 10mm}.certbox p{font-size:14pt;margin:3mm 0}
 .notice{background:#fff7f3;border:1px solid #f3c9b8;border-left:5px solid var(--gate);border-radius:10px;padding:12px 16px;margin-bottom:10px}
@@ -168,8 +169,12 @@ footer b{color:#fff}
       <button class="tab" data-tab="stock">Stock check</button>
       <button class="tab" data-tab="dups">Duplicates</button>
       <button class="tab" data-tab="notices">Notices</button>
+      <button class="tab" data-tab="cats">Categories</button>
+      <button class="tab" data-tab="trash">Recycle bin</button>
+      <button class="tab" data-tab="settings">Settings</button>
     </div>
     <div id="t-dash"><div class="stats" id="stats"></div>
+      <div id="charts" style="margin-top:22px"></div>
       <div style="margin-top:18px"><button class="btn p" data-act="backup">Download backup (Excel)</button> <button class="btn" data-act="mailBackup">Email backup now</button></div></div>
     <div id="t-add" hidden>
       <form class="g" id="bookForm">
@@ -188,6 +193,7 @@ footer b{color:#fff}
         <label>Full name<input name="name" required></label>
         <label>Email<input name="email" type="email"></label>
         <label>Phone<input name="phone"></label>
+        <label>Class<input name="class_name" placeholder="e.g. 10 A"></label>
         <label>Role<select name="role"><option>Student</option><option>Teacher</option><option>Librarian</option><option>Viewer</option></select></label>
         <div style="align-self:end"><button class="btn p">Add member</button></div>
       </form>
@@ -206,6 +212,20 @@ footer b{color:#fff}
       </div>
       <div style="margin:12px 0"><button class="btn" data-act="camBook">Scan book with camera</button> <button class="btn" data-act="camMem">Scan member ID with camera</button></div>
       <div id="scInfo"></div>
+    </div>
+    <div id="t-cats" hidden></div>
+    <div id="t-trash" hidden></div>
+    <div id="t-settings" hidden>
+      <p style="color:var(--mute);margin-top:0">Change the library rules here. Saved changes work within a minute.</p>
+      <form class="g" id="setForm">
+        <label>Fine per late day (Rs.)<input name="fine_per_day" type="number" min="0"></label>
+        <label>Student: books allowed<input name="student_max" type="number" min="1"></label>
+        <label>Student: days to keep<input name="student_days" type="number" min="1"></label>
+        <label>Teacher and Librarian: books allowed<input name="teacher_max" type="number" min="1"></label>
+        <label>Teacher and Librarian: days to keep<input name="teacher_days" type="number" min="1"></label>
+        <label>Reading goal (books a year)<input name="read_goal" type="number" min="1"></label>
+        <div style="align-self:end"><button class="btn p">Save settings</button></div>
+      </form>
     </div>
     <div id="t-dups" hidden></div>
     <div id="t-notices" hidden>
@@ -490,11 +510,28 @@ $$('.tab').forEach(b => b.onclick = () => {
   $$('.tab').forEach(x => x.classList.toggle('on', x === b)); loadTab(b.dataset.tab);
 });
 function loadTab(tab) {
-  ['dash', 'add', 'members', 'requests', 'overdue', 'history', 'import', 'scan', 'resv', 'reports', 'audit', 'print', 'papers', 'stock', 'dups', 'notices'].forEach(t => $('#t-' + t).hidden = t !== tab);
+  ['dash', 'add', 'members', 'requests', 'overdue', 'history', 'import', 'scan', 'resv', 'reports', 'audit', 'print', 'papers', 'stock', 'dups', 'notices', 'cats', 'trash', 'settings'].forEach(t => $('#t-' + t).hidden = t !== tab);
   if (tab === 'dash') run(async () => {
     const d = await api('/api/stats'), n = x => Number(x).toLocaleString();
     const card = (v, l, c = '') => `<div class="stat ${c}"><b>${n(v)}</b><span>${l}</span></div>`;
     $('#stats').innerHTML = card(d.copies, 'Total books') + card(d.titles, 'Book titles') + card(d.available, 'Available books', 'ok') + card(d.borrowed, 'Borrowed books', 'gate') + card(d.lost, 'Lost / damaged', 'warn') + card(d.overdue, 'Overdue books', 'warn') + card(d.members, 'Members') + card(d.requests, 'Pending requests');
+    try {
+      const r = await api('/api/reports'), cats = {};
+      books.forEach(b => { const k = b.category || 'General'; cats[k] = (cats[k] || 0) + 1; });
+      $('#charts').innerHTML = `<h3>Loans per month</h3>${vbars(r.monthly)}<h3 style="margin-top:22px">Books by category</h3>${hbars(Object.entries(cats).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name, count]) => ({ name, count })))}`;
+    } catch (e) { /* charts are optional */ }
+  });
+  if (tab === 'settings') run(async () => {
+    const st = await api('/api/settings');
+    Object.entries(st).forEach(([k, v]) => { const el = $(`#setForm [name=${k}]`); if (el) el.value = v; });
+  });
+  if (tab === 'cats') run(async () => {
+    const c = await api('/api/categories');
+    $('#t-cats').innerHTML = '<p style="color:var(--mute);margin-top:0">Rename a category to fix its spelling. Type the name of an existing category to merge the two.</p>' + c.map(x => `<div class="row" style="grid-template-columns:1fr auto auto"><div><b>${esc(x.name)}</b></div><div class="m">${x.count} books</div><div><button class="btn" data-act="renameCat" data-id="${esc(x.name)}">Rename / merge</button></div></div>`).join('');
+  });
+  if (tab === 'trash') run(async () => {
+    const t = await api('/api/trash');
+    $('#t-trash').innerHTML = '<p style="color:var(--mute);margin-top:0">Deleted books and members are kept here. Restore anything deleted by mistake.</p>' + (t.map(x => `<div class="row" style="grid-template-columns:1fr auto auto"><div><b>${esc(x.label)}</b><span class="m">${esc(x.kind)} &nbsp;·&nbsp; deleted by ${esc(x.deleted_by || '?')} &nbsp;·&nbsp; ${esc(String(x.deleted_at).slice(0, 16).replace('T', ' '))}</span></div><div></div><div class="acts"><button class="btn p" data-act="restore" data-id="${x.id}">Restore</button><button class="btn d" data-act="purge" data-id="${x.id}">Delete forever</button></div></div>`).join('') || '<div class="empty">The recycle bin is empty.</div>');
   });
   if (tab === 'dups') run(async () => {
     dupGroups = await api('/api/duplicates');
@@ -531,17 +568,18 @@ function loadTab(tab) {
   });
   if (tab === 'members') run(async () => {
     const m = memCache = await api('/api/members');
-    $('#memList').innerHTML = m.map(x => `<div class="row"><div><b>${esc(x.name)}</b><span class="m">${esc(x.id)} &nbsp;·&nbsp; ${esc(x.email)}</span></div><div class="cat m">${esc(x.role)}</div><div></div><div class="acts"><button class="btn" data-act="editMember" data-id="${esc(x.id)}">Edit</button><button class="btn d" data-act="delMember" data-id="${esc(x.id)}">Remove</button></div></div>`).join('') || '<div class="empty">No members yet. Add the first one above.</div>';
+    $('#memList').innerHTML = m.map(x => `<div class="row"><div><b>${esc(x.name)}</b><span class="m">${esc(x.id)}${x.class_name ? ' &nbsp;·&nbsp; ' + esc(x.class_name) : ''} &nbsp;·&nbsp; ${esc(x.email)}</span></div><div class="cat m">${esc(x.role)}</div><div></div><div class="acts"><button class="btn" data-act="editMember" data-id="${esc(x.id)}">Edit</button><button class="btn d" data-act="delMember" data-id="${esc(x.id)}">Remove</button></div></div>`).join('') || '<div class="empty">No members yet. Add the first one above.</div>';
   });
   if (tab === 'requests') run(async () => {
     const r = await api('/api/requests');
     $('#t-requests').innerHTML = r.map(x => `<div class="row"><div><b>${esc(x.title)}</b><span class="m">${esc(x.author)}</span></div><div class="cat m">Asked by ${esc(x.username)}</div><div></div><div class="acts"><button class="btn p" data-act="approve" data-id="${x.id}">Add to catalogue</button><button class="btn d" data-act="delReq" data-id="${x.id}">Decline</button></div></div>`).join('') || '<div class="empty">No pending requests.</div>';
   });
   if (tab === 'overdue') run(async () => {
-    const f = await api('/api/fines');
+    const fAll = await api('/api/fines'), f = fAll.filter(x => !ovClass || x.class_name === ovClass);
+    ovList = f;
     const u = await api('/api/fines/unpaid');
     const unpaid = '<h3 style="margin:24px 0 4px">Returned late, fine not paid</h3>' + (u.map(x => `<div class="row"><div><b>${esc(x.book_title)}</b><span class="m">${esc(x.borrower_name)} (${esc(x.borrower_id)})</span></div><div class="cat m">Returned ${esc(x.return_date)}</div><div><b>Rs. ${x.fine_amount}</b></div><div class="acts"><button class="btn p" data-act="paid" data-id="${x.id}">Mark paid</button></div></div>`).join('') || '<div class="empty">No unpaid fines.</div>');
-    $('#t-overdue').innerHTML = '<p><button class="btn p" data-act="mailNow">Email reminders now</button> <span class="m" style="color:var(--mute)">Sends to every overdue member who has an email address.</span></p>' + (f.map(x => `<div class="row"><div><b>${esc(x.title)}</b><span class="m">${esc(x.borrower_name)} (${esc(x.borrower_id)})</span></div><div class="cat m">Due ${esc(x.due_date)}</div><div><span class="chip b">${x.days} days late</span></div><div><b>Rs. ${x.fine}</b><br>${waBtn(x)}</div></div>`).join('') || '<div class="empty">No overdue books.</div>') + unpaid;
+    $('#t-overdue').innerHTML = ovBar(fAll) + '<p><button class="btn p" data-act="mailNow">Email reminders now</button> <span class="m" style="color:var(--mute)">Sends to every overdue member who has an email address.</span></p>' + (f.map(x => `<div class="row"><div><b>${esc(x.title)}</b><span class="m">${esc(x.borrower_name)} (${esc(x.borrower_id)})</span></div><div class="cat m">Due ${esc(x.due_date)}</div><div><span class="chip b">${x.days} days late</span></div><div><b>Rs. ${x.fine}</b><br>${waBtn(x)}</div></div>`).join('') || '<div class="empty">No overdue books.</div>') + unpaid;
   });
   if (tab === 'history') run(async () => {
     const h = await api('/api/history');
@@ -561,12 +599,12 @@ const actions = {
     $('#loanTitle').textContent = books.find(x => x.id == id).title;
     $('#loanList').innerHTML = curLoans.map(l => {
       const late = lateOf(l.due_date);
-      return `<div class="row" style="grid-template-columns:1fr auto"><div><b>${esc(l.borrower_name)}</b><span class="m">${esc(l.borrower_id)} &nbsp;·&nbsp; due ${esc(l.due_date || '-')}${late ? ` &nbsp;·&nbsp; <b style="color:var(--warn)">${late} days late, Rs. ${late * 20}</b>` : ''}</span></div><div class="acts"><button class="btn" data-act="renewLoan" data-id="${l.id}">Renew</button><button class="btn p" data-act="returnLoan" data-id="${l.id}">Return</button></div></div>`;
+      return `<div class="row" style="grid-template-columns:1fr auto"><div><b>${esc(l.borrower_name)}</b><span class="m">${esc(l.borrower_id)} &nbsp;·&nbsp; due ${esc(l.due_date || '-')}${late ? ` &nbsp;·&nbsp; <b style="color:var(--warn)">${late} days late, Rs. ${late * (l.rate || 20)}</b>` : ''}</span></div><div class="acts"><button class="btn" data-act="renewLoan" data-id="${l.id}">Renew</button><button class="btn p" data-act="returnLoan" data-id="${l.id}">Return</button></div></div>`;
     }).join('') || '<div class="empty">No open loans.</div>';
     $('#loanDlg').showModal();
   }),
   returnLoan: id => run(async () => {
-    const l = curLoans.find(x => x.id == id), fine = lateOf(l.due_date) * 20;
+    const l = curLoans.find(x => x.id == id), fine = lateOf(l.due_date) * (l.rate || 20);
     const finePaid = fine > 0 && confirm(`Fine: Rs. ${fine} (${lateOf(l.due_date)} days late).\n\nOK = fine collected\nCancel = not paid yet`);
     await api(`/api/loans/${id}/return`, 'POST', { finePaid }); $('#loanDlg').close(); await loadBooks();
   }, 'Book returned.'),
@@ -575,7 +613,7 @@ const actions = {
   paid: id => run(async () => { await api(`/api/loans/${id}/paid`, 'POST'); loadTab('overdue'); }, 'Fine marked as paid.'),
   editBook: id => openEdit('Edit book', [{ k: 'title', l: 'Title', r: 1 }, { k: 'author', l: 'Author' }, { k: 'category', l: 'Category' }, { k: 'ledger_info', l: 'Ledger No' }, { k: 'quantity', l: 'Copies', t: 'number' }, { k: 'lost_count', l: 'Lost or damaged copies', t: 'number' }, { k: 'isbn', l: 'ISBN (for cover picture)' }, { k: 'pdf_url', l: 'PDF link' }],
     books.find(x => x.id == id), async v => { await api('/api/books/' + id, 'PUT', v); await loadBooks(); }),
-  editMember: id => openEdit('Edit member', [{ k: 'name', l: 'Full name', r: 1 }, { k: 'email', l: 'Email' }, { k: 'phone', l: 'Phone (WhatsApp)' }, { k: 'role', l: 'Role', opts: ['Student', 'Teacher', 'Librarian', 'Viewer'] }, { k: 'status', l: 'Status', opts: ['Active', 'Inactive'] }, { k: 'password', l: 'New password (leave empty to keep)', t: 'password' }],
+  editMember: id => openEdit('Edit member', [{ k: 'name', l: 'Full name', r: 1 }, { k: 'email', l: 'Email' }, { k: 'phone', l: 'Phone (WhatsApp)' }, { k: 'class_name', l: 'Class (e.g. 10 A)' }, { k: 'role', l: 'Role', opts: ['Student', 'Teacher', 'Librarian', 'Viewer'] }, { k: 'status', l: 'Status', opts: ['Active', 'Inactive'] }, { k: 'password', l: 'New password (leave empty to keep)', t: 'password' }],
     memCache.find(x => x.id === id), async v => { await api('/api/members/' + encodeURIComponent(id), 'PUT', v); loadTab('members'); }),
   backup: () => run(async () => {
     const [bk, mm, hh] = await Promise.all([api('/api/books'), api('/api/members'), api('/api/history?all=1')]);
@@ -642,7 +680,7 @@ actions.doImport = () => run(async () => {
 });
 
 // ---- Members Excel import ----
-const MALIAS = { id: ['member id', 'id', 'index no', 'admission no', 'memberid'], name: ['name', 'full name', 'student name'], email: ['email', 'e-mail'], phone: ['phone', 'mobile', 'whatsapp', 'phone number'], role: ['role', 'type'] };
+const MALIAS = { id: ['member id', 'id', 'index no', 'admission no', 'memberid'], name: ['name', 'full name', 'student name'], email: ['email', 'e-mail'], phone: ['phone', 'mobile', 'whatsapp', 'phone number'], role: ['role', 'type'], class_name: ['class', 'grade', 'class name'] };
 let memRows = [];
 $('#memFile').onchange = e => run(async () => {
   const f = e.target.files[0]; if (!f) return;
@@ -651,9 +689,9 @@ $('#memFile').onchange = e => run(async () => {
   const head = (rows[0] || []).map(x => String(x).trim().toLowerCase());
   let idx = {}; for (const k in MALIAS) idx[k] = head.findIndex(x => MALIAS[k].includes(x));
   let body = rows.slice(1);
-  if (idx.id < 0 || idx.name < 0) { idx = { id: 0, name: 1, email: 2, phone: 3, role: 4 }; body = rows; }
+  if (idx.id < 0 || idx.name < 0) { idx = { id: 0, name: 1, email: 2, phone: 3, role: 4, class_name: 5 }; body = rows; }
   const get = (r, k) => idx[k] >= 0 ? String(r[idx[k]] ?? '').trim() : '';
-  memRows = body.map(r => ({ id: get(r, 'id'), name: get(r, 'name'), email: get(r, 'email'), phone: get(r, 'phone'), role: get(r, 'role') })).filter(r => r.id && r.name);
+  memRows = body.map(r => ({ id: get(r, 'id'), name: get(r, 'name'), email: get(r, 'email'), phone: get(r, 'phone'), role: get(r, 'role'), class_name: get(r, 'class_name') })).filter(r => r.id && r.name);
   $('#memPreview').innerHTML = memRows.length
     ? `<b>${memRows.length} members found.</b>` + memRows.slice(0, 4).map(r => `<div class="row"><div><b>${esc(r.name)}</b><span class="m">${esc(r.id)}</span></div><div class="cat m">${esc(r.role || 'Student')}</div><div class="m">${esc(r.phone)}</div><div></div></div>`).join('') + `<div style="margin-top:12px"><button class="btn p" data-act="doMemImport">Import ${memRows.length} members</button></div>`
     : '<div class="empty">No members found. Each row needs a Member ID and a Name.</div>';
@@ -685,6 +723,28 @@ Object.assign(actions, {
   cert: () => run(async () => doPrint(`<div class="certbox"><img src="kcc_logo.png" alt=""><h1>வாசிப்புச் சான்றிதழ்</h1><p>Certificate of Reading</p><p>This certificate is proudly presented to</p><h2>${esc(me.name)}</h2><p>for borrowing and reading <b>${readerCount} books</b> from the school library in ${readerYear}.</p><p style="margin-top:12mm"><b>Kilinochchi Central College Library</b></p></div>`, 'cert')),
   mailNow: () => confirm('Send an email to every overdue member who has an email address?') && run(async () => { const r = await api('/api/reminders/send', 'POST'); toast(`${r.sent} email(s) sent.`); }),
   mailBackup: () => run(async () => { await api('/api/backup/email', 'POST'); }, 'Backup emailed to the admin address.')
+});
+
+// ---- charts, overdue list, categories, recycle bin ----
+let ovClass = '', ovList = [];
+const ovBar = a => '<p><select id="ovClass"><option value="">All classes</option>' + [...new Set(a.map(x => x.class_name).filter(Boolean))].sort().map(c => `<option${c === ovClass ? ' selected' : ''}>${esc(c)}</option>`).join('') + '</select> <button class="btn" data-act="printOverdue">Print list</button></p>';
+$('#t-overdue').addEventListener('change', e => { if (e.target.id === 'ovClass') { ovClass = e.target.value; loadTab('overdue'); } });
+const hbars = a => { const mx = Math.max(1, ...a.map(x => x.count)); return a.map(x => `<div style="display:grid;grid-template-columns:minmax(110px,2fr) 3fr 50px;gap:10px;align-items:center;padding:5px 0"><span>${esc(x.name)}</span><div style="background:var(--wash);border-radius:4px"><div style="height:14px;border-radius:4px;background:var(--slate);width:${x.count / mx * 100}%"></div></div><b>${x.count}</b></div>`).join('') || '<div class="empty">No data yet.</div>'; };
+const vbars = a => {
+  const mx = Math.max(1, ...a.map(x => x.count));
+  if (!a.length) return '<div class="empty">No loans yet.</div>';
+  return `<div style="display:flex;align-items:flex-end;gap:6px;height:140px;border-bottom:1px solid var(--line)">${a.map(x => `<div style="flex:1;background:var(--gate);border-radius:4px 4px 0 0;height:${Math.max(2, x.count / mx * 130)}px"></div>`).join('')}</div><div style="display:flex;gap:6px">${a.map(x => `<div style="flex:1;text-align:center;font-size:11px;color:var(--mute)">${esc(x.name.slice(2))}<br><b>${x.count}</b></div>`).join('')}</div>`;
+};
+Object.assign(actions, {
+  printOverdue: () => {
+    if (!ovList.length) return toast('No overdue books to print.', true);
+    try {
+      doPrint(`<div><h2>Overdue books${ovClass ? ' - ' + esc(ovClass) : ''} (${new Date().toISOString().slice(0, 10)})</h2><table class="ptab"><tr><th>Class</th><th>Member</th><th>Book</th><th>Due</th><th>Days late</th><th>Fine (Rs.)</th></tr>${ovList.map(x => `<tr><td>${esc(x.class_name || '')}</td><td>${esc(x.borrower_name)} (${esc(x.borrower_id)})</td><td>${esc(x.title)}</td><td>${esc(x.due_date)}</td><td>${x.days}</td><td>${x.fine}</td></tr>`).join('')}</table></div>`, 'plist');
+    } catch (e) { toast(e.message, true); }
+  },
+  renameCat: name => openEdit('Rename category', [{ k: 'to', l: 'New name (use an existing name to merge)', r: 1 }], { to: name }, async v => { await api('/api/categories/rename', 'POST', { from: name, to: v.to }); await loadBooks(); loadTab('cats'); }),
+  restore: id => run(async () => { await api(`/api/trash/${id}/restore`, 'POST'); await loadBooks(); loadTab('trash'); }, 'Restored.'),
+  purge: id => confirm('Delete this forever? It cannot be restored.') && run(async () => { await api('/api/trash/' + id, 'DELETE'); loadTab('trash'); }, 'Deleted forever.')
 });
 
 // ---- notices, new arrivals, popular ----
@@ -843,6 +903,7 @@ const submit = (sel, url, done, msg) => $(sel).onsubmit = e => { e.preventDefaul
 submit('#bookForm', '/api/books', loadBooks, 'Book added.');
 submit('#memForm', '/api/members', () => loadTab('members'), 'Member added.');
 submit('#reqForm', '/api/requests', () => {}, 'Request sent to the librarian.');
+$('#setForm').onsubmit = e => { e.preventDefault(); run(async () => { await api('/api/settings', 'PUT', Object.fromEntries(new FormData(e.target))); }, 'Settings saved.'); };
 submit('#noticeForm', '/api/announcements', async () => { await loadNotices(); loadTab('notices'); }, 'Notice posted.');
 
 // ---- Tamil / English interface ----
@@ -863,7 +924,7 @@ const TA = {
   'Past papers and notes': 'கடந்தகால வினாத்தாள்கள் மற்றும் குறிப்புகள்', 'Search': 'தேடல்', 'Grade / Exam': 'தரம் / பரீட்சை', 'Type': 'வகை', 'No papers found yet.': 'இன்னும் வினாத்தாள்கள் இல்லை.',
   'Dashboard': 'முகப்புப் பலகை', 'Add a book': 'புத்தகம் சேர்', 'Members': 'உறுப்பினர்கள்', 'Requests': 'கோரிக்கைகள்', 'Overdue': 'தாமதமானவை', 'History': 'வரலாறு',
   'Import Excel': 'Excel இறக்கு', 'Scan': 'ஸ்கேன்', 'Reservations': 'முன்பதிவுகள்', 'Reports': 'அறிக்கைகள்', 'Activity': 'செயல்பாடு', 'Print cards': 'அட்டைகள் அச்சிடு',
-  'Papers': 'வினாத்தாள்கள்', 'Duplicates': 'இரட்டைப் பதிவுகள்', 'Notices': 'அறிவிப்புகள்', 'New arrivals': 'புதிய வரவுகள்', 'Popular': 'பிரபலமானவை', 'Lost / damaged': 'தொலைந்தவை / சேதமடைந்தவை', 'Post notice': 'அறிவிப்பு வெளியிடு', 'Readers': 'வாசகர்கள்', 'Designed & Developed by': 'வடிவமைத்து உருவாக்கியவர்:', 'Saved for later': 'பின்னர் படிக்க', 'Saved ✓': 'சேமிக்கப்பட்டது ✓', '★ Reviews': '★ விமர்சனங்கள்', 'Post review': 'விமர்சனம் இடு', 'No reviews yet.': 'இன்னும் விமர்சனங்கள் இல்லை.', 'Print my certificate': 'என் சான்றிதழை அச்சிடு', 'Email reminders now': 'மின்னஞ்சல் நினைவூட்டல் அனுப்பு', 'Email backup now': 'காப்புப் பிரதியை மின்னஞ்சலில் அனுப்பு', 'Readers of the year': 'ஆண்டின் சிறந்த வாசகர்கள்', 'Stock check': 'இருப்பு சரிபார்ப்பு', 'Total books': 'மொத்த புத்தகங்கள்', 'Book titles': 'புத்தகத் தலைப்புகள்',
+  'Papers': 'வினாத்தாள்கள்', 'Duplicates': 'இரட்டைப் பதிவுகள்', 'Notices': 'அறிவிப்புகள்', 'New arrivals': 'புதிய வரவுகள்', 'Popular': 'பிரபலமானவை', 'Lost / damaged': 'தொலைந்தவை / சேதமடைந்தவை', 'Post notice': 'அறிவிப்பு வெளியிடு', 'Readers': 'வாசகர்கள்', 'Designed & Developed by': 'வடிவமைத்து உருவாக்கியவர்:', 'Saved for later': 'பின்னர் படிக்க', 'Saved ✓': 'சேமிக்கப்பட்டது ✓', '★ Reviews': '★ விமர்சனங்கள்', 'Post review': 'விமர்சனம் இடு', 'No reviews yet.': 'இன்னும் விமர்சனங்கள் இல்லை.', 'Print my certificate': 'என் சான்றிதழை அச்சிடு', 'Email reminders now': 'மின்னஞ்சல் நினைவூட்டல் அனுப்பு', 'Email backup now': 'காப்புப் பிரதியை மின்னஞ்சலில் அனுப்பு', 'Readers of the year': 'ஆண்டின் சிறந்த வாசகர்கள்', 'Categories': 'வகைகள்', 'Recycle bin': 'குப்பைத் தொட்டி', 'Settings': 'அமைப்புகள்', 'Save settings': 'அமைப்புகளைச் சேமி', 'All classes': 'அனைத்து வகுப்புகள்', 'Print list': 'பட்டியல் அச்சிடு', 'Rename / merge': 'பெயர் மாற்று / இணை', 'Restore': 'மீட்டெடு', 'Delete forever': 'நிரந்தரமாக நீக்கு', 'Class': 'வகுப்பு', 'Loans per month': 'மாதாந்த இரவல்கள்', 'Books by category': 'வகை வாரியாக புத்தகங்கள்', 'Stock check': 'இருப்பு சரிபார்ப்பு', 'Total books': 'மொத்த புத்தகங்கள்', 'Book titles': 'புத்தகத் தலைப்புகள்',
   'Available books': 'கிடைக்கும் புத்தகங்கள்', 'Borrowed books': 'இரவல் புத்தகங்கள்', 'Overdue books': 'தாமதமான புத்தகங்கள்', 'Pending requests': 'நிலுவை கோரிக்கைகள்',
   'Download backup (Excel)': 'காப்புப் பிரதி பதிவிறக்கு (Excel)', 'Title': 'தலைப்பு', 'Category': 'வகை', 'Ledger number': 'பேரேட்டு எண்', 'Ledger No': 'பேரேட்டு எண்',
   'Copies': 'பிரதிகள்', 'PDF link (optional)': 'PDF இணைப்பு (விருப்பம்)', 'Add book': 'புத்தகம் சேர்', 'Member ID': 'உறுப்பினர் எண்', 'Full name': 'முழுப்பெயர்',
