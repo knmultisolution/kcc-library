@@ -60,6 +60,9 @@ dialog .acts{margin-top:8px}
 #toast.err{background:var(--warn)}
 footer{background:var(--slate);color:#b8c0c8;text-align:center;padding:26px 20px;font-size:14px}
 footer b{color:#fff}
+.fx{margin-top:8px}.ict{color:#fff;font-weight:600;letter-spacing:.4px}
+.dev{display:inline-block;margin-top:14px;padding:6px 18px;border:1px solid #4a525b;border-radius:99px;background:linear-gradient(90deg,#3a3f45,#2f343a)}
+.dev b{color:var(--gate);font-size:16px;letter-spacing:.5px}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
 .stat{border:1px solid var(--line);border-left:5px solid var(--slate);border-radius:10px;padding:16px;background:#fff}
 .stat b{display:block;font-size:32px;line-height:1.1}
@@ -261,7 +264,11 @@ footer b{color:#fff}
   </section>
 </main>
 
-<footer><b>Kilinochchi Central College</b> (National School), Kilinochchi, Sri Lanka</footer>
+<footer>
+  <div><b>Kilinochchi Central College</b> (National School), Kilinochchi, Sri Lanka</div>
+  <div class="fx ict">ICT Union of KCC</div>
+  <div class="dev">Designed &amp; Developed by <b>Kegaan</b></div>
+</footer>
 
 <dialog id="loginDlg">
   <form method="dialog" id="loginForm">
@@ -856,7 +863,7 @@ const TA = {
   'Past papers and notes': 'கடந்தகால வினாத்தாள்கள் மற்றும் குறிப்புகள்', 'Search': 'தேடல்', 'Grade / Exam': 'தரம் / பரீட்சை', 'Type': 'வகை', 'No papers found yet.': 'இன்னும் வினாத்தாள்கள் இல்லை.',
   'Dashboard': 'முகப்புப் பலகை', 'Add a book': 'புத்தகம் சேர்', 'Members': 'உறுப்பினர்கள்', 'Requests': 'கோரிக்கைகள்', 'Overdue': 'தாமதமானவை', 'History': 'வரலாறு',
   'Import Excel': 'Excel இறக்கு', 'Scan': 'ஸ்கேன்', 'Reservations': 'முன்பதிவுகள்', 'Reports': 'அறிக்கைகள்', 'Activity': 'செயல்பாடு', 'Print cards': 'அட்டைகள் அச்சிடு',
-  'Papers': 'வினாத்தாள்கள்', 'Duplicates': 'இரட்டைப் பதிவுகள்', 'Notices': 'அறிவிப்புகள்', 'New arrivals': 'புதிய வரவுகள்', 'Popular': 'பிரபலமானவை', 'Lost / damaged': 'தொலைந்தவை / சேதமடைந்தவை', 'Post notice': 'அறிவிப்பு வெளியிடு', 'Readers': 'வாசகர்கள்', 'Saved for later': 'பின்னர் படிக்க', 'Saved ✓': 'சேமிக்கப்பட்டது ✓', '★ Reviews': '★ விமர்சனங்கள்', 'Post review': 'விமர்சனம் இடு', 'No reviews yet.': 'இன்னும் விமர்சனங்கள் இல்லை.', 'Print my certificate': 'என் சான்றிதழை அச்சிடு', 'Email reminders now': 'மின்னஞ்சல் நினைவூட்டல் அனுப்பு', 'Email backup now': 'காப்புப் பிரதியை மின்னஞ்சலில் அனுப்பு', 'Readers of the year': 'ஆண்டின் சிறந்த வாசகர்கள்', 'Stock check': 'இருப்பு சரிபார்ப்பு', 'Total books': 'மொத்த புத்தகங்கள்', 'Book titles': 'புத்தகத் தலைப்புகள்',
+  'Papers': 'வினாத்தாள்கள்', 'Duplicates': 'இரட்டைப் பதிவுகள்', 'Notices': 'அறிவிப்புகள்', 'New arrivals': 'புதிய வரவுகள்', 'Popular': 'பிரபலமானவை', 'Lost / damaged': 'தொலைந்தவை / சேதமடைந்தவை', 'Post notice': 'அறிவிப்பு வெளியிடு', 'Readers': 'வாசகர்கள்', 'Designed & Developed by': 'வடிவமைத்து உருவாக்கியவர்:', 'Saved for later': 'பின்னர் படிக்க', 'Saved ✓': 'சேமிக்கப்பட்டது ✓', '★ Reviews': '★ விமர்சனங்கள்', 'Post review': 'விமர்சனம் இடு', 'No reviews yet.': 'இன்னும் விமர்சனங்கள் இல்லை.', 'Print my certificate': 'என் சான்றிதழை அச்சிடு', 'Email reminders now': 'மின்னஞ்சல் நினைவூட்டல் அனுப்பு', 'Email backup now': 'காப்புப் பிரதியை மின்னஞ்சலில் அனுப்பு', 'Readers of the year': 'ஆண்டின் சிறந்த வாசகர்கள்', 'Stock check': 'இருப்பு சரிபார்ப்பு', 'Total books': 'மொத்த புத்தகங்கள்', 'Book titles': 'புத்தகத் தலைப்புகள்',
   'Available books': 'கிடைக்கும் புத்தகங்கள்', 'Borrowed books': 'இரவல் புத்தகங்கள்', 'Overdue books': 'தாமதமான புத்தகங்கள்', 'Pending requests': 'நிலுவை கோரிக்கைகள்',
   'Download backup (Excel)': 'காப்புப் பிரதி பதிவிறக்கு (Excel)', 'Title': 'தலைப்பு', 'Category': 'வகை', 'Ledger number': 'பேரேட்டு எண்', 'Ledger No': 'பேரேட்டு எண்',
   'Copies': 'பிரதிகள்', 'PDF link (optional)': 'PDF இணைப்பு (விருப்பம்)', 'Add book': 'புத்தகம் சேர்', 'Member ID': 'உறுப்பினர் எண்', 'Full name': 'முழுப்பெயர்',
