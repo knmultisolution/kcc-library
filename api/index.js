@@ -1,12 +1,14 @@
 const express = require('express');
 const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
+const nodemailer = require('nodemailer');
 
 const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 const SECRET = process.env.AUTH_SECRET || '';
 const FINE_PER_DAY = 20;
 // Borrowing rules: change the numbers here if you want different limits
 const LIMITS = { Student: { max: 3, days: 14 }, Teacher: { max: 10, days: 30 }, Librarian: { max: 10, days: 30 } };
+const READ_GOAL = 10; // books per year for the reading certificate
 const limFor = m => LIMITS[(m || {}).role] || LIMITS.Student;
 const app = express();
 app.use(express.json());
@@ -37,7 +39,11 @@ const verify = t => {
 };
 const auth = role => (req, res, next) => {
   const u = verify((req.headers.authorization || '').replace('Bearer ', ''));
-  if (!u || (role === 'admin' && u.role !== 'admin')) return res.status(401).json({ error: 'Please sign in with an admin account.' });
+  if (!u) return res.status(401).json({ error: 'Please sign in.' });
+  if (role === 'admin' && u.role !== 'admin') {
+    if (u.role !== 'viewer') return res.status(401).json({ error: 'Please sign in with an admin account.' });
+    if (req.method !== 'GET') return res.status(403).json({ error: 'This is a view-only account. You cannot change data.' });
+  }
   req.user = u; next();
 };
 const h = fn => (req, res) => fn(req, res).catch(e => res.status(500).json({ error: e.message }));
@@ -79,7 +85,7 @@ app.post('/api/login', h(async (req, res) => {
   const members = await q(db.from('members').select('*').or(`id.ilike.${username.replace(/[,()]/g, '')},name.ilike.${username.replace(/[,()]/g, '')}`));
   const m = members.find(x => x.status === 'Active' && (x.pw_hash ? checkPw(password, x.pw_hash) : x.id.toLowerCase() === password.toLowerCase()));
   if (!m) { await db.from('login_attempts').insert({ who }); return res.status(401).json({ error: 'Name or member ID or password is incorrect.' }); }
-  return ok(token(m.name, m.role === 'Librarian' ? 'admin' : 'user', m.id));
+  return ok(token(m.name, m.role === 'Librarian' ? 'admin' : m.role === 'Viewer' ? 'viewer' : 'user', m.id));
 }));
 
 
@@ -200,10 +206,10 @@ app.delete('/api/requests/:id', auth('admin'), h(async (req, res) => {
 
 // ---- edit books / members, change password ----
 app.put('/api/books/:id', auth('admin'), h(async (req, res) => {
-  const { title, author, category, ledger_info, quantity, pdf_url, lost_count } = req.body;
+  const { title, author, category, ledger_info, quantity, pdf_url, lost_count, isbn } = req.body;
   if (!title) return res.status(400).json({ error: 'Title is required.' });
   const qty = Math.max(1, parseInt(quantity) || 1);
-  await q(db.from('books').update({ title, author: author || 'N/A', category: category || 'General', ledger_info: ledger_info || 'N/A', quantity: qty, lost_count: Math.min(qty, Math.max(0, parseInt(lost_count) || 0)), pdf_url: pdf_url || '' }).eq('id', req.params.id));
+  await q(db.from('books').update({ title, author: author || 'N/A', category: category || 'General', ledger_info: ledger_info || 'N/A', quantity: qty, lost_count: Math.min(qty, Math.max(0, parseInt(lost_count) || 0)), pdf_url: pdf_url || '', isbn: String(isbn || '').replace(/[^0-9Xx]/g, '') }).eq('id', req.params.id));
   await sync(req.params.id);
   res.json({ ok: true });
 }));
@@ -232,7 +238,7 @@ app.post('/api/password', auth(), h(async (req, res) => {
 app.post('/api/members/bulk', auth('admin'), h(async (req, res) => {
   const rows = (req.body.members || []).filter(m => m.id && m.name).slice(0, 500).map(m => ({
     id: String(m.id).trim(), name: String(m.name).trim(), email: String(m.email || '').trim(),
-    phone: String(m.phone || '').replace(/\s/g, ''), role: ['Student', 'Teacher', 'Librarian'].includes(m.role) ? m.role : 'Student'
+    phone: String(m.phone || '').replace(/\s/g, ''), role: ['Student', 'Teacher', 'Librarian', 'Viewer'].includes(m.role) ? m.role : 'Student'
   }));
   if (!rows.length) return res.status(400).json({ error: 'No valid rows. Each row needs a Member ID and a Name.' });
   await q(db.from('members').upsert(rows, { onConflict: 'id' }));
@@ -447,6 +453,91 @@ app.post('/api/books/merge', auth('admin'), h(async (req, res) => {
   await q(db.from('books').delete().in('id', removeIds));
   await sync(keep.id);
   res.json({ ok: true });
+}));
+
+// ---- reviews, saved books, leaderboard ----
+app.get('/api/ratings', h(async (_req, res) => {
+  const rows = await fetchAll(() => db.from('reviews').select('book_id,rating').order('id'));
+  const m = {}; rows.forEach(r => { const o = m[r.book_id] || (m[r.book_id] = { sum: 0, count: 0 }); o.sum += r.rating; o.count++; });
+  res.json(Object.fromEntries(Object.entries(m).map(([k, v]) => [k, { avg: Math.round(v.sum / v.count * 10) / 10, count: v.count }])));
+}));
+app.get('/api/books/:id/reviews', h(async (req, res) =>
+  res.json(await q(db.from('reviews').select('*').eq('book_id', req.params.id).order('id', { ascending: false }).limit(30)))));
+app.post('/api/books/:id/review', auth(), h(async (req, res) => {
+  if (!req.user.id) return res.status(400).json({ error: 'Only members can write reviews.' });
+  const rating = Math.round(+req.body.rating);
+  if (!(rating >= 1 && rating <= 5)) return res.status(400).json({ error: 'Choose 1 to 5 stars.' });
+  const read = await q(db.from('history').select('id').eq('book_id', req.params.id).eq('borrower_id', req.user.id).limit(1));
+  if (!read.length) return res.status(400).json({ error: 'You can review a book after you have borrowed it.' });
+  await q(db.from('reviews').delete().eq('book_id', req.params.id).eq('member_id', req.user.id));
+  await q(db.from('reviews').insert({ book_id: +req.params.id, member_id: req.user.id, member_name: req.user.name, rating, comment: String(req.body.comment || '').slice(0, 300) }));
+  res.json({ ok: true });
+}));
+app.get('/api/wishlist', auth(), h(async (req, res) =>
+  res.json(req.user.id ? (await q(db.from('wishlist').select('book_id').eq('member_id', req.user.id))).map(r => r.book_id) : [])));
+app.post('/api/books/:id/wish', auth(), h(async (req, res) => {
+  if (!req.user.id) return res.status(400).json({ error: 'Only members can save books.' });
+  const ex = await q(db.from('wishlist').select('id').eq('book_id', req.params.id).eq('member_id', req.user.id));
+  if (ex.length) { await q(db.from('wishlist').delete().eq('id', ex[0].id)); return res.json({ saved: false }); }
+  await q(db.from('wishlist').insert({ book_id: +req.params.id, member_id: req.user.id }));
+  res.json({ saved: true });
+}));
+app.get('/api/leaderboard', auth(), h(async (req, res) => {
+  const year = new Date().getFullYear();
+  const rows = await fetchAll(() => db.from('history').select('borrower_id,borrower_name').gte('issue_date', year + '-01-01').order('id'));
+  const c = {}; rows.forEach(r => { if (!r.borrower_id) return; const o = c[r.borrower_id] || (c[r.borrower_id] = { name: r.borrower_name, count: 0 }); o.count++; });
+  const all = Object.entries(c).map(([id, v]) => ({ id, ...v })).sort((a, b) => b.count - a.count);
+  const i = all.findIndex(x => x.id === req.user.id);
+  res.json({ top: all.slice(0, 10).map(({ name, count }) => ({ name, count })), me: { count: i < 0 ? 0 : all[i].count, rank: i < 0 ? null : i + 1 }, goal: READ_GOAL, year });
+}));
+
+// ---- email reminders and weekly backup (Gmail) ----
+const mailer = () => process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD
+  ? nodemailer.createTransport({ service: 'gmail', auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD } }) : null;
+const from = () => `"KCC Library" <${process.env.GMAIL_USER}>`;
+const reminderText = (m, l, days) => days > 0
+  ? `வணக்கம் ${m.name},\n\nநீங்கள் எடுத்த "${l.book_title}" புத்தகம் ${l.due_date} அன்று திருப்பித் தர வேண்டியது. ${days} நாட்கள் தாமதமாகிவிட்டது (அபராதம் ரூ. ${days * FINE_PER_DAY}). தயவுசெய்து விரைவில் திருப்பித் தரவும்.\n\nHello ${m.name},\nYour library book "${l.book_title}" was due on ${l.due_date} and is ${days} day(s) late (fine Rs. ${days * FINE_PER_DAY}). Please return it soon.\n\n- Kilinochchi Central College Library`
+  : `வணக்கம் ${m.name},\n\n"${l.book_title}" புத்தகத்தை ${l.due_date} அன்று திருப்பித் தர வேண்டும்.\n\nHello ${m.name},\nYour library book "${l.book_title}" is due on ${l.due_date}. Please return or renew it.\n\n- Kilinochchi Central College Library`;
+async function sendReminders(all) {
+  const mail = mailer();
+  if (!mail) throw new Error('Email is not set up. Add GMAIL_USER and GMAIL_APP_PASSWORD in Vercel settings.');
+  const loans = await fetchAll(() => db.from('history').select('*').is('return_date', null).not('due_date', 'is', null).order('id'));
+  const mem = {}; (await q(db.from('members').select('id,name,email'))).forEach(m => mem[m.id] = m);
+  const tomorrow = addDays(1), jobs = [];
+  for (const l of loans) {
+    const m = mem[l.borrower_id]; if (!m || !/.+@.+\..+/.test(m.email || '')) continue;
+    const days = lateDays(l.due_date);
+    if (!(all ? days > 0 : (l.due_date === tomorrow || [1, 7, 14].includes(days)))) continue;
+    jobs.push(() => mail.sendMail({ from: from(), to: m.email, subject: days > 0 ? `Overdue library book: ${l.book_title}` : `Library book due soon: ${l.book_title}`, text: reminderText(m, l, days) }));
+  }
+  const list = jobs.slice(0, 100);
+  for (let i = 0; i < list.length; i += 10) await Promise.all(list.slice(i, i + 10).map(f => f()));
+  return list.length;
+}
+const csv = rows => {
+  if (!rows.length) return '';
+  const cols = Object.keys(rows[0]), e = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+  return '\uFEFF' + [cols.join(','), ...rows.map(r => cols.map(c => e(r[c])).join(','))].join('\n');
+};
+async function emailBackup() {
+  const mail = mailer(), to = process.env.ADMIN_EMAIL;
+  if (!mail || !to) throw new Error('Add GMAIL_USER, GMAIL_APP_PASSWORD and ADMIN_EMAIL in Vercel settings.');
+  const [bk, mm, hh] = await Promise.all([
+    fetchAll(() => db.from('books').select('*').order('id')),
+    q(db.from('members').select('id,name,email,phone,role,status')),
+    fetchAll(() => db.from('history').select('*').order('id'))
+  ]);
+  await mail.sendMail({ from: from(), to, subject: 'KCC Library backup ' + today(), text: 'Books, members and loans are attached (CSV files, open them in Excel).',
+    attachments: [{ filename: 'books.csv', content: csv(bk) }, { filename: 'members.csv', content: csv(mm) }, { filename: 'loans.csv', content: csv(hh) }] });
+}
+app.post('/api/reminders/send', auth('admin'), h(async (_req, res) => res.json({ sent: await sendReminders(true) })));
+app.post('/api/backup/email', auth('admin'), h(async (_req, res) => { await emailBackup(); res.json({ ok: true }); }));
+app.get('/api/cron/daily', h(async (req, res) => {
+  if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) return res.status(401).json({ error: 'Not allowed.' });
+  const out = {};
+  try { out.reminders = await sendReminders(false); } catch (e) { out.reminderError = e.message; }
+  if (new Date().getUTCDay() === 1) { try { await emailBackup(); out.backup = 'sent'; } catch (e) { out.backupError = e.message; } }
+  res.json(out);
 }));
 
 // ---- dashboard numbers ----
