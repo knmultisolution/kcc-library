@@ -50,7 +50,7 @@ form.g{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap
 label{display:block;font-size:14px;color:var(--mute)}
 label input,label select{display:block;width:100%;margin-top:4px;padding:10px 12px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink)}
 .empty{color:var(--mute);padding:22px 4px}
-dialog{border:0;border-radius:12px;padding:26px;width:min(400px,92vw);box-shadow:0 20px 50px rgba(0,0,0,.35)}
+dialog{background:var(--paper);color:var(--ink);border:0;border-radius:12px;padding:26px;width:min(400px,92vw);box-shadow:0 20px 50px rgba(0,0,0,.35)}
 dialog::backdrop{background:rgba(20,24,28,.6)}
 dialog h3{margin:0 0 4px;font-size:22px}
 dialog p{margin:0 0 16px;color:var(--mute)}
@@ -71,6 +71,12 @@ footer b{color:#fff}
 .pub{color:var(--mute);margin:-6px 0 8px;font-size:15px}.pub b{color:var(--ink)}
 @media print{header.bar,.hero,footer,.tabs,.btn,.nb,#toast{display:none!important}main{padding:0}.panel{border:0;padding:0}}
 #printArea{display:none}
+[data-theme=dark]{--ink:#e8eaed;--paper:#1f2428;--wash:#14181b;--line:#363e46;--mute:#9aa4ae;--ok:#4cc38a;--warn:#ff7a6b}
+[data-theme=dark] .btn,[data-theme=dark] label input,[data-theme=dark] label select,[data-theme=dark] .stat,[data-theme=dark] .tab{background:var(--paper);color:var(--ink)}
+[data-theme=dark] .btn.p{background:var(--gate);color:#fff}[data-theme=dark] .btn.d{color:var(--warn)}
+[data-theme=dark] .chip.a{background:#173a2a}[data-theme=dark] .chip.b{background:#432120}
+[data-theme=dark] .notice{background:#2b2420;border-color:#5a3a2c}[data-theme=dark] .tab.on{color:#fff}
+@media print{[data-theme=dark]{--ink:#000;--paper:#fff;--wash:#fff;--line:#999;--mute:#444}}
 .ptab{border-collapse:collapse;width:100%;font-size:10pt;color:#000}.ptab th,.ptab td{border:1px solid #888;padding:3px 6px;text-align:left}
 .certbox{border:6px double #2b3036;padding:18mm 14mm;text-align:center;margin:8mm auto;width:170mm;color:#000}
 .certbox img{height:34mm}.certbox h1{font-size:30pt;margin:6mm 0 2mm}.certbox h2{font-size:26pt;margin:6mm 0;border-bottom:1px solid #999;display:inline-block;padding:0 10mm}.certbox p{font-size:14pt;margin:3mm 0}
@@ -104,10 +110,12 @@ footer b{color:#fff}
   <nav>
     <button class="nb on" data-view="catalog">Catalogue</button>
     <button class="nb" data-view="papers">Past papers</button>
+    <button class="nb" data-view="parent">Parent view</button>
     <button class="nb" data-view="my" id="navMy" hidden>My books</button>
     <button class="nb" data-view="readers" id="navReaders" hidden>Readers</button>
     <button class="nb" data-view="request" id="navReq" hidden>Request a book</button>
     <button class="nb" data-view="admin" id="navAdmin" hidden>Librarian desk</button>
+    <button class="nb" id="themeBtn" data-notr title="Dark / light">🌙</button>
     <button class="nb" id="langBtn" data-notr>தமிழ்</button>
     <button class="nb" id="navPw" hidden>Password</button>
     <button class="nb cta" id="authBtn">Sign in</button>
@@ -120,6 +128,8 @@ footer b{color:#fff}
   <div class="search">
     <input id="q" type="search" placeholder="Search in Tamil or English, e.g. thirukkural" aria-label="Search books">
     <select id="cat" aria-label="Category"><option value="">All categories</option></select>
+    <select id="avail" aria-label="Availability"><option value="">All books</option><option value="1">Available only</option></select>
+    <select id="lang2" aria-label="Language"><option value="">All languages</option><option value="ta">Tamil</option><option value="en">English / other</option></select>
   </div>
 </div></section>
 
@@ -130,6 +140,17 @@ footer b{color:#fff}
     <h2>Past papers and notes</h2>
     <div class="g2" style="margin-bottom:12px"><label>Search<input id="pq" type="search" placeholder="Subject, year or title"></label><label>Grade / Exam<select id="pg"></select></label><label>Type<select id="pk"><option value="">All types</option><option>Past paper</option><option>Marking scheme</option><option>Notes</option></select></label></div>
     <div id="paperList"></div>
+  </section>
+
+  <section id="v-parent" class="panel" hidden>
+    <h2>Parent view</h2>
+    <p style="color:var(--mute);margin-top:-8px">See the books your child has borrowed. Enter the child's Member ID and the last 4 digits of the phone number registered with the library.</p>
+    <form class="g" id="parentForm" style="max-width:560px">
+      <label>Member ID<input name="memberId" required></label>
+      <label>Last 4 digits of phone<input name="phone4" inputmode="numeric" maxlength="4" required></label>
+      <div style="align-self:end"><button class="btn p">Show</button></div>
+    </form>
+    <div id="parentOut" style="margin-top:18px"></div>
   </section>
 
   <section id="v-readers" class="panel" hidden>
@@ -172,6 +193,7 @@ footer b{color:#fff}
       <button class="tab" data-tab="cats">Categories</button>
       <button class="tab" data-tab="trash">Recycle bin</button>
       <button class="tab" data-tab="settings">Settings</button>
+      <button class="tab" data-tab="holidays">Holidays</button>
     </div>
     <div id="t-dash"><div class="stats" id="stats"></div>
       <div id="charts" style="margin-top:22px"></div>
@@ -212,6 +234,11 @@ footer b{color:#fff}
       </div>
       <div style="margin:12px 0"><button class="btn" data-act="camBook">Scan book with camera</button> <button class="btn" data-act="camMem">Scan member ID with camera</button></div>
       <div id="scInfo"></div>
+    </div>
+    <div id="t-holidays" hidden>
+      <p style="color:var(--mute);margin-top:0">Saturdays and Sundays are skipped automatically. Add school holidays here. If a due date falls on a holiday, it moves to the next working day.</p>
+      <form class="g" id="holForm"><label>Date<input name="day" type="date" required></label><label>Name<input name="name" placeholder="e.g. Poya day"></label><div style="align-self:end"><button class="btn p">Add holiday</button></div></form>
+      <div id="holList" style="margin-top:16px"></div>
     </div>
     <div id="t-cats" hidden></div>
     <div id="t-trash" hidden></div>
@@ -358,7 +385,7 @@ const run = async (fn, ok) => { try { await fn(); if (ok) toast(ok); } catch (e)
 
 // ---- views ----
 function show(view) {
-  ['catalog', 'papers', 'my', 'readers', 'request', 'admin'].forEach(v => $('#v-' + v).hidden = v !== view);
+  ['catalog', 'papers', 'parent', 'my', 'readers', 'request', 'admin'].forEach(v => $('#v-' + v).hidden = v !== view);
   $$('.nb[data-view]').forEach(b => b.classList.toggle('on', b.dataset.view === view));
   if (view === 'my') loadMy();
   if (view === 'readers') loadReaders();
@@ -473,9 +500,13 @@ const chip = b => {
   if (left(b) <= 0) return (b.borrowed_count || 0) > 0 ? '<span class="chip b">All borrowed</span>' : '<span class="chip b">Lost / damaged</span>';
   return q === 1 ? '<span class="chip a">Available</span>' : `<span class="chip a">${left(b)} of ${q} available</span>`;
 };
+const okFilters = b => {
+  const av = $('#avail').value, lg = $('#lang2').value;
+  return (!av || left(b) > 0) && (!lg || (lg === 'ta') === hasTamil(b.title));
+};
 function renderBooks() {
   const t = $('#q').value.toLowerCase(), c = $('#cat').value, admin = me && me.role === 'admin';
-  const all = books.filter(b => (!c || b.category === c) && matches(b, t.trim())), rows = all.slice(0, 100);
+  const all = books.filter(b => (!c || b.category === c) && okFilters(b) && matches(b, t.trim())), rows = all.slice(0, 100);
   $('#list').innerHTML = rows.length ? rows.map(b => `
     <div class="row">
       <div style="display:flex;gap:10px;align-items:center">${cover(b)}<div><b>${esc(b.title)}</b>${starsOf(b)}<span class="m">${esc(b.author)}${b.ledger_info && b.ledger_info !== 'N/A' ? ' &nbsp;·&nbsp; Ledger ' + esc(b.ledger_info) : ''}</span></div></div>
@@ -483,6 +514,7 @@ function renderBooks() {
       <div>${chip(b)}</div>
       <div class="acts">
         <button class="btn" data-act="reviews" data-id="${b.id}">★ Reviews</button>
+        ${admin ? `<button class="btn" data-act="feature" data-id="${b.id}">Feature</button>` : ''}
         ${me && me.memberId ? `<button class="btn" data-act="wish" data-id="${b.id}">${wished.has(b.id) ? 'Saved ✓' : 'Save'}</button>` : ''}
         ${b.pdf_url ? `<a class="btn" href="${esc(b.pdf_url)}" target="_blank" rel="noopener">Read PDF</a>` : ''}
         ${me && me.memberId && left(b) <= 0 ? `<button class="btn" data-act="reserve" data-id="${b.id}">Reserve</button>` : ''}
@@ -494,7 +526,7 @@ function renderBooks() {
       </div>
     </div>`).join('') + (all.length > 100 ? `<div class="empty">Showing 100 of ${all.length} books. Type more letters to narrow your search.</div>` : '') : '<div class="empty">No books match your search. Try a different spelling, or search in Tamil or English.</div>';
 }
-$('#q').oninput = $('#cat').onchange = renderBooks;
+$('#q').oninput = $('#cat').onchange = $('#avail').onchange = $('#lang2').onchange = renderBooks;
 
 function askMember(book) {
   return new Promise(res => {
@@ -510,7 +542,7 @@ $$('.tab').forEach(b => b.onclick = () => {
   $$('.tab').forEach(x => x.classList.toggle('on', x === b)); loadTab(b.dataset.tab);
 });
 function loadTab(tab) {
-  ['dash', 'add', 'members', 'requests', 'overdue', 'history', 'import', 'scan', 'resv', 'reports', 'audit', 'print', 'papers', 'stock', 'dups', 'notices', 'cats', 'trash', 'settings'].forEach(t => $('#t-' + t).hidden = t !== tab);
+  ['dash', 'add', 'members', 'requests', 'overdue', 'history', 'import', 'scan', 'resv', 'reports', 'audit', 'print', 'papers', 'stock', 'dups', 'notices', 'cats', 'trash', 'settings', 'holidays'].forEach(t => $('#t-' + t).hidden = t !== tab);
   if (tab === 'dash') run(async () => {
     const d = await api('/api/stats'), n = x => Number(x).toLocaleString();
     const card = (v, l, c = '') => `<div class="stat ${c}"><b>${n(v)}</b><span>${l}</span></div>`;
@@ -520,6 +552,10 @@ function loadTab(tab) {
       books.forEach(b => { const k = b.category || 'General'; cats[k] = (cats[k] || 0) + 1; });
       $('#charts').innerHTML = `<h3>Loans per month</h3>${vbars(r.monthly)}<h3 style="margin-top:22px">Books by category</h3>${hbars(Object.entries(cats).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name, count]) => ({ name, count })))}`;
     } catch (e) { /* charts are optional */ }
+  });
+  if (tab === 'holidays') run(async () => {
+    const hs = await api('/api/holidays');
+    $('#holList').innerHTML = hs.map(x => `<div class="row" style="grid-template-columns:1fr auto auto"><div><b>${esc(x.day)}</b><span class="m">${esc(x.name || '')}</span></div><div></div><div><button class="btn d" data-act="delHoliday" data-id="${x.id}">Delete</button></div></div>`).join('') || '<div class="empty">No holidays added yet.</div>';
   });
   if (tab === 'settings') run(async () => {
     const st = await api('/api/settings');
@@ -725,6 +761,25 @@ Object.assign(actions, {
   mailBackup: () => run(async () => { await api('/api/backup/email', 'POST'); }, 'Backup emailed to the admin address.')
 });
 
+// ---- parent view, holidays, book of the week, dark mode ----
+$('#parentForm').onsubmit = e => {
+  e.preventDefault();
+  run(async () => {
+    const d = await api('/api/parent', 'POST', Object.fromEntries(new FormData(e.target)));
+    $('#parentOut').innerHTML = `<h3 style="margin:0 0 6px">${esc(d.name)}${d.class_name ? ' &nbsp;·&nbsp; ' + esc(d.class_name) : ''}</h3>`
+      + (d.unpaid ? `<p><span class="chip b">Unpaid fines: Rs. ${d.unpaid}</span></p>` : '')
+      + '<h3>Borrowed now</h3>' + (d.open.map(l => `<div class="row" style="grid-template-columns:2fr 1.5fr"><div><b>${esc(l.title)}</b></div><div>${l.late > 0 ? `<span class="chip b">${l.late} days late · Rs. ${l.fine}</span>` : `<span class="chip a">Due ${esc(l.due_date)}</span>`}</div></div>`).join('') || '<div class="empty">No books borrowed right now.</div>')
+      + '<h3 style="margin-top:20px">Recently returned</h3>' + (d.recent.map(l => `<div class="row" style="grid-template-columns:2fr 1.5fr"><div><b>${esc(l.title)}</b></div><div class="m">Returned ${esc(l.return_date)}</div></div>`).join('') || '<div class="empty">Nothing yet.</div>');
+  });
+};
+function setTheme(t) { document.documentElement.dataset.theme = t; localStorage.setItem('kccTheme', t); $('#themeBtn').textContent = t === 'dark' ? '☀️' : '🌙'; }
+$('#themeBtn').onclick = () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+setTheme(localStorage.getItem('kccTheme') === 'dark' ? 'dark' : 'light');
+Object.assign(actions, {
+  feature: id => openEdit('Book of the week', [{ k: 'note', l: 'Why read it? (short note)' }], { note: '' }, async v => { await api('/api/featured', 'PUT', { bookId: id, note: v.note }); await loadNotices(); }),
+  unfeature: () => run(async () => { await api('/api/featured', 'PUT', { bookId: 0 }); await loadNotices(); }, 'Removed.')
+});
+
 // ---- charts, overdue list, categories, recycle bin ----
 let ovClass = '', ovList = [];
 const ovBar = a => '<p><select id="ovClass"><option value="">All classes</option>' + [...new Set(a.map(x => x.class_name).filter(Boolean))].sort().map(c => `<option${c === ovClass ? ' selected' : ''}>${esc(c)}</option>`).join('') + '</select> <button class="btn" data-act="printOverdue">Print list</button></p>';
@@ -736,6 +791,7 @@ const vbars = a => {
   return `<div style="display:flex;align-items:flex-end;gap:6px;height:140px;border-bottom:1px solid var(--line)">${a.map(x => `<div style="flex:1;background:var(--gate);border-radius:4px 4px 0 0;height:${Math.max(2, x.count / mx * 130)}px"></div>`).join('')}</div><div style="display:flex;gap:6px">${a.map(x => `<div style="flex:1;text-align:center;font-size:11px;color:var(--mute)">${esc(x.name.slice(2))}<br><b>${x.count}</b></div>`).join('')}</div>`;
 };
 Object.assign(actions, {
+  delHoliday: id => run(async () => { await api('/api/holidays/' + id, 'DELETE'); loadTab('holidays'); }, 'Deleted.'),
   printOverdue: () => {
     if (!ovList.length) return toast('No overdue books to print.', true);
     try {
@@ -752,7 +808,12 @@ let dupGroups = [];
 async function loadNotices() {
   try {
     const n = await api('/api/announcements');
-    $('#notices').innerHTML = n.map(x => `<div class="notice"><b>${esc(x.title)}</b>${x.body ? `<div>${esc(x.body)}</div>` : ''}</div>`).join('');
+    let fb = '';
+    try {
+      const f = await api('/api/featured'), b = books.find(x => x.id === f.book_id);
+      if (b) fb = `<div class="notice" style="border-left-color:var(--ok)"><b>📚 Book of the week: ${esc(b.title)}</b>${f.note ? `<div>${esc(f.note)}</div>` : ''}<div style="margin-top:6px"><button class="btn" data-act="pick" data-id="${b.id}">See this book</button>${me && me.role === 'admin' ? ' <button class="btn d" data-act="unfeature">Remove</button>' : ''}</div></div>`;
+    } catch (e) { /* optional */ }
+    $('#notices').innerHTML = fb + n.map(x => `<div class="notice"><b>${esc(x.title)}</b>${x.body ? `<div>${esc(x.body)}</div>` : ''}</div>`).join('');
   } catch (e) { /* notices are optional */ }
 }
 async function loadShelf() {
@@ -904,6 +965,7 @@ submit('#bookForm', '/api/books', loadBooks, 'Book added.');
 submit('#memForm', '/api/members', () => loadTab('members'), 'Member added.');
 submit('#reqForm', '/api/requests', () => {}, 'Request sent to the librarian.');
 $('#setForm').onsubmit = e => { e.preventDefault(); run(async () => { await api('/api/settings', 'PUT', Object.fromEntries(new FormData(e.target))); }, 'Settings saved.'); };
+submit('#holForm', '/api/holidays', () => loadTab('holidays'), 'Holiday added.');
 submit('#noticeForm', '/api/announcements', async () => { await loadNotices(); loadTab('notices'); }, 'Notice posted.');
 
 // ---- Tamil / English interface ----
@@ -924,7 +986,7 @@ const TA = {
   'Past papers and notes': 'கடந்தகால வினாத்தாள்கள் மற்றும் குறிப்புகள்', 'Search': 'தேடல்', 'Grade / Exam': 'தரம் / பரீட்சை', 'Type': 'வகை', 'No papers found yet.': 'இன்னும் வினாத்தாள்கள் இல்லை.',
   'Dashboard': 'முகப்புப் பலகை', 'Add a book': 'புத்தகம் சேர்', 'Members': 'உறுப்பினர்கள்', 'Requests': 'கோரிக்கைகள்', 'Overdue': 'தாமதமானவை', 'History': 'வரலாறு',
   'Import Excel': 'Excel இறக்கு', 'Scan': 'ஸ்கேன்', 'Reservations': 'முன்பதிவுகள்', 'Reports': 'அறிக்கைகள்', 'Activity': 'செயல்பாடு', 'Print cards': 'அட்டைகள் அச்சிடு',
-  'Papers': 'வினாத்தாள்கள்', 'Duplicates': 'இரட்டைப் பதிவுகள்', 'Notices': 'அறிவிப்புகள்', 'New arrivals': 'புதிய வரவுகள்', 'Popular': 'பிரபலமானவை', 'Lost / damaged': 'தொலைந்தவை / சேதமடைந்தவை', 'Post notice': 'அறிவிப்பு வெளியிடு', 'Readers': 'வாசகர்கள்', 'Designed & Developed by': 'வடிவமைத்து உருவாக்கியவர்:', 'Saved for later': 'பின்னர் படிக்க', 'Saved ✓': 'சேமிக்கப்பட்டது ✓', '★ Reviews': '★ விமர்சனங்கள்', 'Post review': 'விமர்சனம் இடு', 'No reviews yet.': 'இன்னும் விமர்சனங்கள் இல்லை.', 'Print my certificate': 'என் சான்றிதழை அச்சிடு', 'Email reminders now': 'மின்னஞ்சல் நினைவூட்டல் அனுப்பு', 'Email backup now': 'காப்புப் பிரதியை மின்னஞ்சலில் அனுப்பு', 'Readers of the year': 'ஆண்டின் சிறந்த வாசகர்கள்', 'Categories': 'வகைகள்', 'Recycle bin': 'குப்பைத் தொட்டி', 'Settings': 'அமைப்புகள்', 'Save settings': 'அமைப்புகளைச் சேமி', 'All classes': 'அனைத்து வகுப்புகள்', 'Print list': 'பட்டியல் அச்சிடு', 'Rename / merge': 'பெயர் மாற்று / இணை', 'Restore': 'மீட்டெடு', 'Delete forever': 'நிரந்தரமாக நீக்கு', 'Class': 'வகுப்பு', 'Loans per month': 'மாதாந்த இரவல்கள்', 'Books by category': 'வகை வாரியாக புத்தகங்கள்', 'Stock check': 'இருப்பு சரிபார்ப்பு', 'Total books': 'மொத்த புத்தகங்கள்', 'Book titles': 'புத்தகத் தலைப்புகள்',
+  'Papers': 'வினாத்தாள்கள்', 'Duplicates': 'இரட்டைப் பதிவுகள்', 'Notices': 'அறிவிப்புகள்', 'New arrivals': 'புதிய வரவுகள்', 'Popular': 'பிரபலமானவை', 'Lost / damaged': 'தொலைந்தவை / சேதமடைந்தவை', 'Post notice': 'அறிவிப்பு வெளியிடு', 'Readers': 'வாசகர்கள்', 'Designed & Developed by': 'வடிவமைத்து உருவாக்கியவர்:', 'Saved for later': 'பின்னர் படிக்க', 'Saved ✓': 'சேமிக்கப்பட்டது ✓', '★ Reviews': '★ விமர்சனங்கள்', 'Post review': 'விமர்சனம் இடு', 'No reviews yet.': 'இன்னும் விமர்சனங்கள் இல்லை.', 'Print my certificate': 'என் சான்றிதழை அச்சிடு', 'Email reminders now': 'மின்னஞ்சல் நினைவூட்டல் அனுப்பு', 'Email backup now': 'காப்புப் பிரதியை மின்னஞ்சலில் அனுப்பு', 'Readers of the year': 'ஆண்டின் சிறந்த வாசகர்கள்', 'Categories': 'வகைகள்', 'Parent view': 'பெற்றோர் பார்வை', 'All books': 'அனைத்து புத்தகங்கள்', 'Available only': 'கிடைப்பவை மட்டும்', 'All languages': 'அனைத்து மொழிகள்', 'Tamil': 'தமிழ்', 'English / other': 'ஆங்கிலம் / பிற', 'Holidays': 'விடுமுறை நாட்கள்', 'Feature': 'முன்னிலைப்படுத்து', 'Show': 'காட்டு', 'See this book': 'இந்த புத்தகத்தைப் பார்', 'Recycle bin': 'குப்பைத் தொட்டி', 'Settings': 'அமைப்புகள்', 'Save settings': 'அமைப்புகளைச் சேமி', 'All classes': 'அனைத்து வகுப்புகள்', 'Print list': 'பட்டியல் அச்சிடு', 'Rename / merge': 'பெயர் மாற்று / இணை', 'Restore': 'மீட்டெடு', 'Delete forever': 'நிரந்தரமாக நீக்கு', 'Class': 'வகுப்பு', 'Loans per month': 'மாதாந்த இரவல்கள்', 'Books by category': 'வகை வாரியாக புத்தகங்கள்', 'Stock check': 'இருப்பு சரிபார்ப்பு', 'Total books': 'மொத்த புத்தகங்கள்', 'Book titles': 'புத்தகத் தலைப்புகள்',
   'Available books': 'கிடைக்கும் புத்தகங்கள்', 'Borrowed books': 'இரவல் புத்தகங்கள்', 'Overdue books': 'தாமதமான புத்தகங்கள்', 'Pending requests': 'நிலுவை கோரிக்கைகள்',
   'Download backup (Excel)': 'காப்புப் பிரதி பதிவிறக்கு (Excel)', 'Title': 'தலைப்பு', 'Category': 'வகை', 'Ledger number': 'பேரேட்டு எண்', 'Ledger No': 'பேரேட்டு எண்',
   'Copies': 'பிரதிகள்', 'PDF link (optional)': 'PDF இணைப்பு (விருப்பம்)', 'Add book': 'புத்தகம் சேர்', 'Member ID': 'உறுப்பினர் எண்', 'Full name': 'முழுப்பெயர்',
