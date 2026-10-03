@@ -68,6 +68,8 @@ footer b{color:#fff}
 .pub{color:var(--mute);margin:-6px 0 8px;font-size:15px}.pub b{color:var(--ink)}
 @media print{header.bar,.hero,footer,.tabs,.btn,.nb,#toast{display:none!important}main{padding:0}.panel{border:0;padding:0}}
 #printArea{display:none}
+.certbox{border:6px double #2b3036;padding:18mm 14mm;text-align:center;margin:8mm auto;width:170mm;color:#000}
+.certbox img{height:34mm}.certbox h1{font-size:30pt;margin:6mm 0 2mm}.certbox h2{font-size:26pt;margin:6mm 0;border-bottom:1px solid #999;display:inline-block;padding:0 10mm}.certbox p{font-size:14pt;margin:3mm 0}
 .notice{background:#fff7f3;border:1px solid #f3c9b8;border-left:5px solid var(--gate);border-radius:10px;padding:12px 16px;margin-bottom:10px}
 .shelf{margin:0 0 12px}.shelf div{margin:4px 0}.shelf b{margin-right:8px}.shelf .btn{margin:2px 4px 2px 0;font-size:14px;padding:4px 10px}
 .g2{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
@@ -99,6 +101,7 @@ footer b{color:#fff}
     <button class="nb on" data-view="catalog">Catalogue</button>
     <button class="nb" data-view="papers">Past papers</button>
     <button class="nb" data-view="my" id="navMy" hidden>My books</button>
+    <button class="nb" data-view="readers" id="navReaders" hidden>Readers</button>
     <button class="nb" data-view="request" id="navReq" hidden>Request a book</button>
     <button class="nb" data-view="admin" id="navAdmin" hidden>Librarian desk</button>
     <button class="nb" id="langBtn" data-notr>தமிழ்</button>
@@ -125,7 +128,13 @@ footer b{color:#fff}
     <div id="paperList"></div>
   </section>
 
-  <section id="v-my" class="panel" hidden><h2>My books</h2><p id="myLimit" style="color:var(--mute);margin-top:-8px"></p><div id="myList"></div><h2 style="margin-top:26px">Returned</h2><div id="myPast"></div><h2 style="margin-top:26px">Reserved</h2><div id="myResv"></div></section>
+  <section id="v-readers" class="panel" hidden>
+    <h2>Readers of the year</h2>
+    <div id="rdMe"></div>
+    <div id="rdTop"></div>
+  </section>
+
+  <section id="v-my" class="panel" hidden><h2>My books</h2><p id="myLimit" style="color:var(--mute);margin-top:-8px"></p><div id="myList"></div><h2 style="margin-top:26px">Returned</h2><div id="myPast"></div><h2 style="margin-top:26px">Reserved</h2><div id="myResv"></div><h2 style="margin-top:26px">Saved for later</h2><div id="mySaved"></div></section>
 
   <section id="v-request" class="panel" hidden>
     <h2>Request a book</h2>
@@ -158,7 +167,7 @@ footer b{color:#fff}
       <button class="tab" data-tab="notices">Notices</button>
     </div>
     <div id="t-dash"><div class="stats" id="stats"></div>
-      <div style="margin-top:18px"><button class="btn p" data-act="backup">Download backup (Excel)</button></div></div>
+      <div style="margin-top:18px"><button class="btn p" data-act="backup">Download backup (Excel)</button> <button class="btn" data-act="mailBackup">Email backup now</button></div></div>
     <div id="t-add" hidden>
       <form class="g" id="bookForm">
         <label>Title<input name="title" required></label>
@@ -176,7 +185,7 @@ footer b{color:#fff}
         <label>Full name<input name="name" required></label>
         <label>Email<input name="email" type="email"></label>
         <label>Phone<input name="phone"></label>
-        <label>Role<select name="role"><option>Student</option><option>Teacher</option><option>Librarian</option></select></label>
+        <label>Role<select name="role"><option>Student</option><option>Teacher</option><option>Librarian</option><option>Viewer</option></select></label>
         <div style="align-self:end"><button class="btn p">Add member</button></div>
       </form>
       <div style="margin-bottom:18px"><p style="color:var(--mute);margin:0 0 8px">Or import many members from Excel: <b>Member ID, Name, Email, Phone, Role</b></p>
@@ -290,6 +299,13 @@ footer b{color:#fff}
 <div id="printArea"></div>
 <input type="file" id="pdfPick" accept="application/pdf" hidden>
 
+<dialog id="revDlg">
+  <h3 id="revTitle"></h3>
+  <div id="revList" style="max-height:40vh;overflow:auto"></div>
+  <div id="revForm"></div>
+  <div class="acts"><button class="btn" onclick="$('#revDlg').close()">Close</button></div>
+</dialog>
+
 <div id="toast" role="status"></div>
 
 <script>
@@ -315,9 +331,10 @@ const run = async (fn, ok) => { try { await fn(); if (ok) toast(ok); } catch (e)
 
 // ---- views ----
 function show(view) {
-  ['catalog', 'papers', 'my', 'request', 'admin'].forEach(v => $('#v-' + v).hidden = v !== view);
+  ['catalog', 'papers', 'my', 'readers', 'request', 'admin'].forEach(v => $('#v-' + v).hidden = v !== view);
   $$('.nb[data-view]').forEach(b => b.classList.toggle('on', b.dataset.view === view));
   if (view === 'my') loadMy();
+  if (view === 'readers') loadReaders();
   if (view === 'papers') loadPapers();
   if (view === 'admin') loadTab(document.querySelector('.tab.on').dataset.tab);
 }
@@ -328,9 +345,10 @@ function refreshChrome() {
   $('#navReq').hidden = !me;
   $('#navMy').hidden = !(me && me.memberId);
   $('#navPw').hidden = !(me && me.memberId);
-  $('#navAdmin').hidden = !(me && me.role === 'admin');
-  if (!me || (me.role !== 'admin' && !$('#v-admin').hidden)) show('catalog');
-  renderBooks();
+  $('#navAdmin').hidden = !(me && (me.role === 'admin' || me.role === 'viewer'));
+  $('#navReaders').hidden = !(me && me.memberId);
+  if (!me || (!['admin', 'viewer'].includes(me.role) && !$('#v-admin').hidden)) show('catalog');
+  renderBooks(); loadExtras();
 }
 function signOut() { me = null; localStorage.removeItem('kccUser'); refreshChrome(); }
 $('#authBtn').onclick = () => me ? signOut() : $('#loginDlg').showModal();
@@ -352,7 +370,7 @@ async function loadBooks() {
     const cp = books.reduce((a, b) => a + (b.quantity || 1), 0), br = books.reduce((a, b) => a + (b.borrowed_count || 0), 0), ls = books.reduce((a, b) => a + (b.lost_count || 0), 0);
     $('#pubStats').innerHTML = `<b>${cp.toLocaleString()}</b> books &nbsp;·&nbsp; <b>${(cp - br - ls).toLocaleString()}</b> available &nbsp;·&nbsp; <b>${br.toLocaleString()}</b> borrowed`;
     renderBooks();
-    loadShelf(); loadNotices();
+    loadShelf(); loadNotices(); loadExtras();
   });
 }
 // ---- Tamil / English (phonetic) search ----
@@ -398,6 +416,7 @@ function loadMy() {
     if (d.limit) $('#myLimit').textContent = `You can borrow up to ${d.limit.max} books, ${d.limit.days} days each.`;
     $('#myList').innerHTML = d.open.map(l => `<div class="row" style="grid-template-columns:2fr 1.5fr auto"><div><b>${esc(l.book_title)}</b><span class="m">Issued ${esc(l.issue_date)}${l.renewals ? ' · renewed ' + l.renewals + ' time(s)' : ''}</span></div><div>${l.late > 0 ? `<span class="chip b">${l.late} days late · Rs. ${l.fine}</span>` : `<span class="chip a">Due ${esc(l.due_date)}</span>`}</div><div class="acts">${l.late > 0 || l.renewals >= 2 ? '' : `<button class="btn p" data-act="renew" data-id="${l.id}">Renew</button>`}</div></div>`).join('') || '<div class="empty">You have no borrowed books right now.</div>';
     $('#myPast').innerHTML = d.past.map(l => `<div class="row" style="grid-template-columns:2fr 1.5fr auto"><div><b>${esc(l.book_title)}</b></div><div class="m">Returned ${esc(l.return_date)}</div><div>${l.fine_amount > 0 ? (l.fine_paid ? '<span class="chip a">Fine paid</span>' : `<span class="chip b">Fine Rs. ${l.fine_amount}</span>`) : ''}</div></div>`).join('') || '<div class="empty">No returned books yet.</div>';
+    $('#mySaved').innerHTML = [...wished].map(id => books.find(b => b.id === id)).filter(Boolean).map(b => `<div class="row" style="grid-template-columns:1fr auto"><div><b>${esc(b.title)}</b><span class="m">${esc(b.author)}</span></div><div>${chip(b)} <button class="btn" data-act="wish" data-id="${b.id}">Remove</button></div></div>`).join('') || '<div class="empty">Nothing saved yet. Use Save on a book.</div>';
     $('#myResv').innerHTML = (d.reservations || []).map(r => `<div class="row" style="grid-template-columns:1fr auto"><div><b>${esc(r.book_title)}</b><span class="m">Waiting since ${esc(String(r.created_at).slice(0, 10))}</span></div><div><button class="btn d" data-act="cancelResv" data-id="${r.id}">Cancel</button></div></div>`).join('') || '<div class="empty">No reservations.</div>';
   });
 }
@@ -411,6 +430,16 @@ function openEdit(title, fields, vals, save) {
   $('#editForm').onsubmit = e => { e.preventDefault(); run(async () => { await save(Object.fromEntries(new FormData(e.target))); d.close(); }, 'Saved.'); };
 }
 $('#navPw').onclick = () => openEdit('Change password', [{ k: 'current', l: 'Current password', t: 'password', r: 1 }, { k: 'next', l: 'New password (at least 4 characters)', t: 'password', r: 1 }], {}, v => api('/api/password', 'POST', v));
+let ratings = {}, wished = new Set(), readerYear = 0, readerCount = 0;
+const starsOf = b => ratings[b.id] ? `<span class="m" style="display:block;color:#b7791f">★ ${ratings[b.id].avg} (${ratings[b.id].count})</span>` : '';
+const cover = b => b.isbn ? `<img loading="lazy" alt="" src="https://covers.openlibrary.org/b/isbn/${esc(b.isbn)}-S.jpg?default=false" style="width:36px;height:50px;object-fit:cover;border-radius:3px;background:var(--wash)" onerror="this.remove()">` : '';
+async function loadExtras() {
+  try {
+    ratings = await api('/api/ratings');
+    wished = new Set(me && me.memberId ? await api('/api/wishlist') : []);
+    renderBooks();
+  } catch (e) { /* optional */ }
+}
 const left = b => (b.quantity || 1) - (b.borrowed_count || 0) - (b.lost_count || 0);
 const chip = b => {
   const q = b.quantity || 1;
@@ -422,10 +451,12 @@ function renderBooks() {
   const all = books.filter(b => (!c || b.category === c) && matches(b, t.trim())), rows = all.slice(0, 100);
   $('#list').innerHTML = rows.length ? rows.map(b => `
     <div class="row">
-      <div><b>${esc(b.title)}</b><span class="m">${esc(b.author)}${b.ledger_info && b.ledger_info !== 'N/A' ? ' &nbsp;·&nbsp; Ledger ' + esc(b.ledger_info) : ''}</span></div>
+      <div style="display:flex;gap:10px;align-items:center">${cover(b)}<div><b>${esc(b.title)}</b>${starsOf(b)}<span class="m">${esc(b.author)}${b.ledger_info && b.ledger_info !== 'N/A' ? ' &nbsp;·&nbsp; Ledger ' + esc(b.ledger_info) : ''}</span></div></div>
       <div class="cat m">${esc(b.category)}</div>
       <div>${chip(b)}</div>
       <div class="acts">
+        <button class="btn" data-act="reviews" data-id="${b.id}">★ Reviews</button>
+        ${me && me.memberId ? `<button class="btn" data-act="wish" data-id="${b.id}">${wished.has(b.id) ? 'Saved ✓' : 'Save'}</button>` : ''}
         ${b.pdf_url ? `<a class="btn" href="${esc(b.pdf_url)}" target="_blank" rel="noopener">Read PDF</a>` : ''}
         ${me && me.memberId && left(b) <= 0 ? `<button class="btn" data-act="reserve" data-id="${b.id}">Reserve</button>` : ''}
         ${admin ? `${left(b) > 0 ? `<button class="btn p" data-act="issue" data-id="${b.id}">Issue</button>` : ''}
@@ -503,7 +534,7 @@ function loadTab(tab) {
     const f = await api('/api/fines');
     const u = await api('/api/fines/unpaid');
     const unpaid = '<h3 style="margin:24px 0 4px">Returned late, fine not paid</h3>' + (u.map(x => `<div class="row"><div><b>${esc(x.book_title)}</b><span class="m">${esc(x.borrower_name)} (${esc(x.borrower_id)})</span></div><div class="cat m">Returned ${esc(x.return_date)}</div><div><b>Rs. ${x.fine_amount}</b></div><div class="acts"><button class="btn p" data-act="paid" data-id="${x.id}">Mark paid</button></div></div>`).join('') || '<div class="empty">No unpaid fines.</div>');
-    $('#t-overdue').innerHTML = (f.map(x => `<div class="row"><div><b>${esc(x.title)}</b><span class="m">${esc(x.borrower_name)} (${esc(x.borrower_id)})</span></div><div class="cat m">Due ${esc(x.due_date)}</div><div><span class="chip b">${x.days} days late</span></div><div><b>Rs. ${x.fine}</b><br>${waBtn(x)}</div></div>`).join('') || '<div class="empty">No overdue books.</div>') + unpaid;
+    $('#t-overdue').innerHTML = '<p><button class="btn p" data-act="mailNow">Email reminders now</button> <span class="m" style="color:var(--mute)">Sends to every overdue member who has an email address.</span></p>' + (f.map(x => `<div class="row"><div><b>${esc(x.title)}</b><span class="m">${esc(x.borrower_name)} (${esc(x.borrower_id)})</span></div><div class="cat m">Due ${esc(x.due_date)}</div><div><span class="chip b">${x.days} days late</span></div><div><b>Rs. ${x.fine}</b><br>${waBtn(x)}</div></div>`).join('') || '<div class="empty">No overdue books.</div>') + unpaid;
   });
   if (tab === 'history') run(async () => {
     const h = await api('/api/history');
@@ -535,9 +566,9 @@ const actions = {
   renewLoan: id => run(async () => { await api(`/api/loans/${id}/renew`, 'POST'); $('#loanDlg').close(); await loadBooks(); }, 'Renewed.'),
   renew: id => run(async () => { await api(`/api/loans/${id}/renew`, 'POST'); loadMy(); }, 'Renewed.'),
   paid: id => run(async () => { await api(`/api/loans/${id}/paid`, 'POST'); loadTab('overdue'); }, 'Fine marked as paid.'),
-  editBook: id => openEdit('Edit book', [{ k: 'title', l: 'Title', r: 1 }, { k: 'author', l: 'Author' }, { k: 'category', l: 'Category' }, { k: 'ledger_info', l: 'Ledger No' }, { k: 'quantity', l: 'Copies', t: 'number' }, { k: 'lost_count', l: 'Lost or damaged copies', t: 'number' }, { k: 'pdf_url', l: 'PDF link' }],
+  editBook: id => openEdit('Edit book', [{ k: 'title', l: 'Title', r: 1 }, { k: 'author', l: 'Author' }, { k: 'category', l: 'Category' }, { k: 'ledger_info', l: 'Ledger No' }, { k: 'quantity', l: 'Copies', t: 'number' }, { k: 'lost_count', l: 'Lost or damaged copies', t: 'number' }, { k: 'isbn', l: 'ISBN (for cover picture)' }, { k: 'pdf_url', l: 'PDF link' }],
     books.find(x => x.id == id), async v => { await api('/api/books/' + id, 'PUT', v); await loadBooks(); }),
-  editMember: id => openEdit('Edit member', [{ k: 'name', l: 'Full name', r: 1 }, { k: 'email', l: 'Email' }, { k: 'phone', l: 'Phone (WhatsApp)' }, { k: 'role', l: 'Role', opts: ['Student', 'Teacher', 'Librarian'] }, { k: 'status', l: 'Status', opts: ['Active', 'Inactive'] }, { k: 'password', l: 'New password (leave empty to keep)', t: 'password' }],
+  editMember: id => openEdit('Edit member', [{ k: 'name', l: 'Full name', r: 1 }, { k: 'email', l: 'Email' }, { k: 'phone', l: 'Phone (WhatsApp)' }, { k: 'role', l: 'Role', opts: ['Student', 'Teacher', 'Librarian', 'Viewer'] }, { k: 'status', l: 'Status', opts: ['Active', 'Inactive'] }, { k: 'password', l: 'New password (leave empty to keep)', t: 'password' }],
     memCache.find(x => x.id === id), async v => { await api('/api/members/' + encodeURIComponent(id), 'PUT', v); loadTab('members'); }),
   backup: () => run(async () => {
     const [bk, mm, hh] = await Promise.all([api('/api/books'), api('/api/members'), api('/api/history?all=1')]);
@@ -623,6 +654,30 @@ $('#memFile').onchange = e => run(async () => {
 actions.doMemImport = () => run(async () => {
   for (let i = 0; i < memRows.length; i += 200) await api('/api/members/bulk', 'POST', { members: memRows.slice(i, i + 200) });
   $('#memPreview').innerHTML = `<b>${memRows.length} members saved.</b>`; $('#memFile').value = ''; memRows = []; loadTab('members');
+});
+
+// ---- reviews, saved books, readers ----
+function loadReaders() {
+  run(async () => {
+    const d = await api('/api/leaderboard'), pct = Math.min(100, d.me.count / d.goal * 100);
+    readerYear = d.year; readerCount = d.me.count;
+    $('#rdMe').innerHTML = `<div class="stat gate" style="margin-bottom:14px"><b>${d.me.count} / ${d.goal}</b><span>books borrowed in ${d.year}${d.me.rank ? ' · your rank #' + d.me.rank : ''}</span><div style="background:var(--wash);border-radius:4px;margin-top:8px"><div style="height:10px;border-radius:4px;background:var(--gate);width:${pct}%"></div></div></div>` + (d.me.count >= d.goal ? '<p><button class="btn p" data-act="cert">Print my certificate</button></p>' : '');
+    $('#rdTop').innerHTML = d.top.map((x, i) => `<div class="row" style="grid-template-columns:50px 1fr auto"><b>#${i + 1}</b><div>${esc(x.name)}</div><div><b>${x.count}</b> books</div></div>`).join('') || '<div class="empty">No borrowing this year yet.</div>';
+  });
+}
+Object.assign(actions, {
+  reviews: id => run(async () => {
+    const b = books.find(x => x.id == id), rv = await api(`/api/books/${id}/reviews`);
+    $('#revTitle').textContent = b.title;
+    $('#revList').innerHTML = rv.map(r => `<div class="row" style="grid-template-columns:1fr"><div><b>${'★'.repeat(r.rating)}${'☆'.repeat(5 - r.rating)} &nbsp;${esc(r.member_name)}</b><span class="m">${esc(r.comment || '')}</span></div></div>`).join('') || '<div class="empty">No reviews yet.</div>';
+    $('#revForm').innerHTML = me && me.memberId ? `<div class="g2" style="margin-top:12px"><label>Your rating (stars)<select id="rvStars"><option>5</option><option>4</option><option>3</option><option>2</option><option>1</option></select></label><label>Comment (optional)<input id="rvText" maxlength="300"></label></div><p><button class="btn p" data-act="sendReview" data-id="${id}">Post review</button></p>` : '<p class="m" style="color:var(--mute)">Sign in to write a review.</p>';
+    $('#revDlg').showModal();
+  }),
+  sendReview: id => run(async () => { await api(`/api/books/${id}/review`, 'POST', { rating: $('#rvStars').value, comment: $('#rvText').value }); $('#revDlg').close(); await loadExtras(); }, 'Review posted.'),
+  wish: id => run(async () => { const r = await api(`/api/books/${id}/wish`, 'POST'); r.saved ? wished.add(+id) : wished.delete(+id); renderBooks(); if (!$('#v-my').hidden) loadMy(); }),
+  cert: () => run(async () => doPrint(`<div class="certbox"><img src="kcc_logo.png" alt=""><h1>வாசிப்புச் சான்றிதழ்</h1><p>Certificate of Reading</p><p>This certificate is proudly presented to</p><h2>${esc(me.name)}</h2><p>for borrowing and reading <b>${readerCount} books</b> from the school library in ${readerYear}.</p><p style="margin-top:12mm"><b>Kilinochchi Central College Library</b></p></div>`, 'cert')),
+  mailNow: () => confirm('Send an email to every overdue member who has an email address?') && run(async () => { const r = await api('/api/reminders/send', 'POST'); toast(`${r.sent} email(s) sent.`); }),
+  mailBackup: () => run(async () => { await api('/api/backup/email', 'POST'); }, 'Backup emailed to the admin address.')
 });
 
 // ---- notices, new arrivals, popular ----
@@ -801,7 +856,7 @@ const TA = {
   'Past papers and notes': 'கடந்தகால வினாத்தாள்கள் மற்றும் குறிப்புகள்', 'Search': 'தேடல்', 'Grade / Exam': 'தரம் / பரீட்சை', 'Type': 'வகை', 'No papers found yet.': 'இன்னும் வினாத்தாள்கள் இல்லை.',
   'Dashboard': 'முகப்புப் பலகை', 'Add a book': 'புத்தகம் சேர்', 'Members': 'உறுப்பினர்கள்', 'Requests': 'கோரிக்கைகள்', 'Overdue': 'தாமதமானவை', 'History': 'வரலாறு',
   'Import Excel': 'Excel இறக்கு', 'Scan': 'ஸ்கேன்', 'Reservations': 'முன்பதிவுகள்', 'Reports': 'அறிக்கைகள்', 'Activity': 'செயல்பாடு', 'Print cards': 'அட்டைகள் அச்சிடு',
-  'Papers': 'வினாத்தாள்கள்', 'Duplicates': 'இரட்டைப் பதிவுகள்', 'Notices': 'அறிவிப்புகள்', 'New arrivals': 'புதிய வரவுகள்', 'Popular': 'பிரபலமானவை', 'Lost / damaged': 'தொலைந்தவை / சேதமடைந்தவை', 'Post notice': 'அறிவிப்பு வெளியிடு', 'Stock check': 'இருப்பு சரிபார்ப்பு', 'Total books': 'மொத்த புத்தகங்கள்', 'Book titles': 'புத்தகத் தலைப்புகள்',
+  'Papers': 'வினாத்தாள்கள்', 'Duplicates': 'இரட்டைப் பதிவுகள்', 'Notices': 'அறிவிப்புகள்', 'New arrivals': 'புதிய வரவுகள்', 'Popular': 'பிரபலமானவை', 'Lost / damaged': 'தொலைந்தவை / சேதமடைந்தவை', 'Post notice': 'அறிவிப்பு வெளியிடு', 'Readers': 'வாசகர்கள்', 'Saved for later': 'பின்னர் படிக்க', 'Saved ✓': 'சேமிக்கப்பட்டது ✓', '★ Reviews': '★ விமர்சனங்கள்', 'Post review': 'விமர்சனம் இடு', 'No reviews yet.': 'இன்னும் விமர்சனங்கள் இல்லை.', 'Print my certificate': 'என் சான்றிதழை அச்சிடு', 'Email reminders now': 'மின்னஞ்சல் நினைவூட்டல் அனுப்பு', 'Email backup now': 'காப்புப் பிரதியை மின்னஞ்சலில் அனுப்பு', 'Readers of the year': 'ஆண்டின் சிறந்த வாசகர்கள்', 'Stock check': 'இருப்பு சரிபார்ப்பு', 'Total books': 'மொத்த புத்தகங்கள்', 'Book titles': 'புத்தகத் தலைப்புகள்',
   'Available books': 'கிடைக்கும் புத்தகங்கள்', 'Borrowed books': 'இரவல் புத்தகங்கள்', 'Overdue books': 'தாமதமான புத்தகங்கள்', 'Pending requests': 'நிலுவை கோரிக்கைகள்',
   'Download backup (Excel)': 'காப்புப் பிரதி பதிவிறக்கு (Excel)', 'Title': 'தலைப்பு', 'Category': 'வகை', 'Ledger number': 'பேரேட்டு எண்', 'Ledger No': 'பேரேட்டு எண்',
   'Copies': 'பிரதிகள்', 'PDF link (optional)': 'PDF இணைப்பு (விருப்பம்)', 'Add book': 'புத்தகம் சேர்', 'Member ID': 'உறுப்பினர் எண்', 'Full name': 'முழுப்பெயர்',
