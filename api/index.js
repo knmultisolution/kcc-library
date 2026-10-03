@@ -5,13 +5,31 @@ const nodemailer = require('nodemailer');
 
 const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 const SECRET = process.env.AUTH_SECRET || '';
-const FINE_PER_DAY = 20;
+let FINE_PER_DAY = 20;
 // Borrowing rules: change the numbers here if you want different limits
 const LIMITS = { Student: { max: 3, days: 14 }, Teacher: { max: 10, days: 30 }, Librarian: { max: 10, days: 30 } };
-const READ_GOAL = 10; // books per year for the reading certificate
+let READ_GOAL = 10; // books per year for the reading certificate
+let settingsAt = 0;
+async function loadSettings(force) {
+  if (!force && Date.now() - settingsAt < 30000) return;
+  settingsAt = Date.now();
+  const { data } = await db.from('settings').select('*');
+  const v = {}; (data || []).forEach(r => v[r.key] = +r.value);
+  if (v.fine_per_day >= 0) FINE_PER_DAY = v.fine_per_day;
+  if (v.read_goal > 0) READ_GOAL = v.read_goal;
+  if (v.student_max > 0) LIMITS.Student.max = v.student_max;
+  if (v.student_days > 0) LIMITS.Student.days = v.student_days;
+  if (v.teacher_max > 0) LIMITS.Teacher.max = LIMITS.Librarian.max = v.teacher_max;
+  if (v.teacher_days > 0) LIMITS.Teacher.days = LIMITS.Librarian.days = v.teacher_days;
+}
+const toTrash = async (kind, table, col, val, who) => {
+  const rows = await q(db.from(table).select('*').eq(col, val));
+  if (rows[0]) await q(db.from('trash').insert({ kind, data: rows[0], deleted_by: who }));
+};
 const limFor = m => LIMITS[(m || {}).role] || LIMITS.Student;
 const app = express();
 app.use(express.json());
+app.use(async (_req, _res, next) => { try { await loadSettings(); } catch (e) { /* settings table is optional */ } next(); });
 
 // activity log: every successful change is recorded
 app.use((req, res, next) => {
@@ -118,6 +136,7 @@ app.post('/api/books/bulk', auth('admin'), h(async (req, res) => {
 }));
 
 app.delete('/api/books/:id', auth('admin'), h(async (req, res) => {
+  await toTrash('book', 'books', 'id', req.params.id, req.user.name);
   await q(db.from('books').delete().eq('id', req.params.id));
   res.json({ ok: true });
 }));
@@ -151,7 +170,7 @@ app.post('/api/books/:id/issue', auth('admin'), h(async (req, res) => {
 app.get('/api/books/:id/loans', auth('admin'), h(async (req, res) => {
   const loans = await q(db.from('history').select('*').eq('book_id', req.params.id).is('return_date', null).order('id'));
   if (!loans.length) await sync(req.params.id); // fixes a book that wrongly shows as borrowed
-  res.json(loans);
+  res.json(loans.map(l => ({ ...l, rate: FINE_PER_DAY })));
 }));
 
 app.post('/api/loans/:id/return', auth('admin'), h(async (req, res) => {
@@ -171,13 +190,14 @@ app.get('/api/members', auth('admin'), h(async (_req, res) =>
   res.json((await q(db.from('members').select('*').order('name'))).map(({ pw_hash, ...m }) => ({ ...m, has_password: !!pw_hash })))));
 
 app.post('/api/members', auth('admin'), h(async (req, res) => {
-  const { id, name, email, phone, role } = req.body;
+  const { id, name, email, phone, role, class_name } = req.body;
   if (!id || !name) return res.status(400).json({ error: 'Member ID and name are required.' });
-  const rows = await q(db.from('members').insert({ id, name, email: email || '', phone: phone || '', role: role || 'Student' }).select());
+  const rows = await q(db.from('members').insert({ id, name, email: email || '', phone: phone || '', role: role || 'Student', class_name: class_name || '' }).select());
   res.status(201).json(rows[0]);
 }));
 
 app.delete('/api/members/:id', auth('admin'), h(async (req, res) => {
+  await toTrash('member', 'members', 'id', req.params.id, req.user.name);
   await q(db.from('members').delete().eq('id', req.params.id));
   res.json({ ok: true });
 }));
@@ -215,9 +235,9 @@ app.put('/api/books/:id', auth('admin'), h(async (req, res) => {
 }));
 
 app.put('/api/members/:id', auth('admin'), h(async (req, res) => {
-  const { name, email, phone, role, status, password } = req.body;
+  const { name, email, phone, role, status, password, class_name } = req.body;
   if (!name) return res.status(400).json({ error: 'Name is required.' });
-  const upd = { name, email: email || '', phone: phone || '', role: role || 'Student', status: status || 'Active' };
+  const upd = { name, email: email || '', phone: phone || '', role: role || 'Student', status: status || 'Active', class_name: class_name || '' };
   if (password) upd.pw_hash = hashPw(password);
   await q(db.from('members').update(upd).eq('id', req.params.id));
   res.json({ ok: true });
@@ -238,7 +258,7 @@ app.post('/api/password', auth(), h(async (req, res) => {
 app.post('/api/members/bulk', auth('admin'), h(async (req, res) => {
   const rows = (req.body.members || []).filter(m => m.id && m.name).slice(0, 500).map(m => ({
     id: String(m.id).trim(), name: String(m.name).trim(), email: String(m.email || '').trim(),
-    phone: String(m.phone || '').replace(/\s/g, ''), role: ['Student', 'Teacher', 'Librarian', 'Viewer'].includes(m.role) ? m.role : 'Student'
+    phone: String(m.phone || '').replace(/\s/g, ''), role: ['Student', 'Teacher', 'Librarian', 'Viewer'].includes(m.role) ? m.role : 'Student', class_name: String(m.class_name || '').trim()
   }));
   if (!rows.length) return res.status(400).json({ error: 'No valid rows. Each row needs a Member ID and a Name.' });
   await q(db.from('members').upsert(rows, { onConflict: 'id' }));
@@ -334,7 +354,7 @@ app.get('/api/reports', auth('admin'), h(async (_req, res) => {
   res.json({
     loans: rows.length, collected: rows.filter(r => r.fine_paid).reduce((a, r) => a + (r.fine_amount || 0), 0),
     topBooks: top(r => r.book_title), topReaders: top(r => r.borrower_name ? `${r.borrower_name} (${r.borrower_id})` : ''),
-    monthly: Object.entries(months).sort().slice(-6).map(([name, count]) => ({ name, count }))
+    monthly: Object.entries(months).sort().slice(-12).map(([name, count]) => ({ name, count }))
   });
 }));
 
@@ -540,6 +560,57 @@ app.get('/api/cron/daily', h(async (req, res) => {
   res.json(out);
 }));
 
+// ---- settings, categories, recycle bin ----
+app.get('/api/settings', auth('admin'), h(async (_req, res) => {
+  await loadSettings(true);
+  res.json({ fine_per_day: FINE_PER_DAY, read_goal: READ_GOAL, student_max: LIMITS.Student.max, student_days: LIMITS.Student.days, teacher_max: LIMITS.Teacher.max, teacher_days: LIMITS.Teacher.days });
+}));
+app.put('/api/settings', auth('admin'), h(async (req, res) => {
+  const keys = ['fine_per_day', 'read_goal', 'student_max', 'student_days', 'teacher_max', 'teacher_days'];
+  const rows = keys.filter(k => req.body[k] !== undefined && req.body[k] !== '' && +req.body[k] >= 0).map(k => ({ key: k, value: String(Math.round(+req.body[k])) }));
+  if (rows.length) await q(db.from('settings').upsert(rows, { onConflict: 'key' }));
+  await loadSettings(true);
+  res.json({ ok: true });
+}));
+
+app.get('/api/categories', auth('admin'), h(async (_req, res) => {
+  const bks = await fetchAll(() => db.from('books').select('category').order('id'));
+  const c = {}; bks.forEach(b => { const k = b.category || 'General'; c[k] = (c[k] || 0) + 1; });
+  res.json(Object.entries(c).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count));
+}));
+app.post('/api/categories/rename', auth('admin'), h(async (req, res) => {
+  const to = String(req.body.to || '').trim();
+  if (!to) return res.status(400).json({ error: 'Enter the new name.' });
+  await q(db.from('books').update({ category: to }).eq('category', String(req.body.from || '')));
+  res.json({ ok: true });
+}));
+
+app.get('/api/trash', auth('admin'), h(async (_req, res) => {
+  const rows = await q(db.from('trash').select('*').order('id', { ascending: false }).limit(100));
+  res.json(rows.map(r => ({ id: r.id, kind: r.kind, label: r.kind === 'book' ? r.data.title : `${r.data.name} (${r.data.id})`, deleted_by: r.deleted_by, deleted_at: r.deleted_at })));
+}));
+app.post('/api/trash/:id/restore', auth('admin'), h(async (req, res) => {
+  const [t] = await q(db.from('trash').select('*').eq('id', req.params.id));
+  if (!t) return res.status(404).json({ error: 'Item not found.' });
+  const d = { ...t.data };
+  if (t.kind === 'book') {
+    const oldId = d.id; delete d.id; d.borrowed_count = 0; d.status = 'Available';
+    const [nb] = await q(db.from('books').insert(d).select());
+    await q(db.from('history').update({ book_id: nb.id }).eq('book_id', oldId));
+    await q(db.from('reservations').update({ book_id: nb.id }).eq('book_id', oldId));
+    await sync(nb.id);
+  } else {
+    if ((await q(db.from('members').select('id').eq('id', d.id))).length) return res.status(400).json({ error: 'A member with this ID already exists.' });
+    await q(db.from('members').insert(d));
+  }
+  await q(db.from('trash').delete().eq('id', t.id));
+  res.json({ ok: true });
+}));
+app.delete('/api/trash/:id', auth('admin'), h(async (req, res) => {
+  await q(db.from('trash').delete().eq('id', req.params.id));
+  res.json({ ok: true });
+}));
+
 // ---- dashboard numbers ----
 app.get('/api/stats', auth('admin'), h(async (_req, res) => {
   const cnt = async p => { const { count, error } = await p; if (error) throw new Error(error.message); return count || 0; };
@@ -561,10 +632,10 @@ app.get('/api/stats', auth('admin'), h(async (_req, res) => {
 app.get('/api/fines', auth('admin'), h(async (_req, res) => {
   const loans = await q(db.from('history').select('*').is('return_date', null).lt('due_date', today()).order('due_date'));
   const ph = {};
-  (await q(db.from('members').select('id,phone'))).forEach(m => ph[m.id.toLowerCase()] = m.phone);
+  (await q(db.from('members').select('id,phone,class_name'))).forEach(m => ph[m.id.toLowerCase()] = m);
   res.json(loans.map(l => {
     const days = Math.ceil((new Date(today()) - new Date(l.due_date)) / 864e5);
-    return { id: l.id, title: l.book_title, borrower_name: l.borrower_name, borrower_id: l.borrower_id, due_date: l.due_date, days, fine: days * FINE_PER_DAY, phone: ph[(l.borrower_id || '').toLowerCase()] || '' };
+    return { id: l.id, title: l.book_title, borrower_name: l.borrower_name, borrower_id: l.borrower_id, due_date: l.due_date, days, fine: days * FINE_PER_DAY, phone: (ph[(l.borrower_id || '').toLowerCase()] || {}).phone || '', class_name: (ph[(l.borrower_id || '').toLowerCase()] || {}).class_name || '' };
   }));
 }));
 
