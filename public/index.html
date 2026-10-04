@@ -71,6 +71,7 @@ footer b{color:#fff}
 .pub{color:var(--mute);margin:-6px 0 8px;font-size:15px}.pub b{color:var(--ink)}
 @media print{header.bar,.hero,footer,.tabs,.btn,.nb,#toast{display:none!important}main{padding:0}.panel{border:0;padding:0}}
 #printArea{display:none}
+@media print{body{zoom:1!important}}
 .letters .letter{page-break-after:always;padding:12mm 14mm;font-size:12pt;line-height:1.5;color:#000}
 .letter img{height:22mm}.letter h3{margin:2mm 0}.letter table{border-collapse:collapse;width:100%;margin:4mm 0}.letter td,.letter th{border:1px solid #888;padding:2mm 3mm;text-align:left}
 .poster{text-align:center;color:#000;padding-top:15mm}.poster img.lg{height:40mm}.poster h1{font-size:34pt;margin:6mm 0 2mm}.poster p{font-size:16pt;margin:2mm 0}#qrBox{display:inline-block;margin:8mm 0;padding:4mm;border:3px solid #000}
@@ -122,6 +123,7 @@ footer b{color:#fff}
     <button class="nb" data-view="readers" id="navReaders" hidden>Readers</button>
     <button class="nb" data-view="request" id="navReq" hidden>Request a book</button>
     <button class="nb" data-view="admin" id="navAdmin" hidden>Librarian desk</button>
+    <button class="nb" id="sizeBtn" data-notr title="Text size">A</button>
     <button class="nb" id="themeBtn" data-notr title="Dark / light">🌙</button>
     <button class="nb" id="langBtn" data-notr>தமிழ்</button>
     <button class="nb" id="navPw" hidden>Password</button>
@@ -171,6 +173,8 @@ footer b{color:#fff}
     <h2>Readers of the year</h2>
     <div id="rdMe"></div>
     <div id="rdTop"></div>
+    <h3 style="margin-top:22px">Class competition</h3>
+    <div id="rdClass"></div>
   </section>
 
   <section id="v-my" class="panel" hidden><h2>My books</h2><p id="myLimit" style="color:var(--mute);margin-top:-8px"></p><div id="myList"></div><h2 style="margin-top:26px">Returned</h2><div id="myPast"></div><h2 style="margin-top:26px">Reserved</h2><div id="myResv"></div><h2 style="margin-top:26px">Saved for later</h2><div id="mySaved"></div></section>
@@ -209,10 +213,12 @@ footer b{color:#fff}
       <button class="tab" data-tab="settings">Settings</button>
       <button class="tab" data-tab="holidays">Holidays</button>
       <button class="tab" data-tab="promote">Promote classes</button>
+      <button class="tab" data-tab="signups">Sign-ups</button>
+      <button class="tab" data-tab="restore">Restore</button>
     </div>
     <div id="t-dash"><div class="stats" id="stats"></div>
       <div id="charts" style="margin-top:22px"></div>
-      <div style="margin-top:18px"><button class="btn p" data-act="backup">Download backup (Excel)</button> <button class="btn" data-act="mailBackup">Email backup now</button></div></div>
+      <div style="margin-top:18px"><button class="btn p" data-act="backup">Download backup (Excel)</button> <button class="btn" data-act="mailBackup">Email backup now</button> <button class="btn" data-act="mailSummary">Email weekly summary now</button></div></div>
     <div id="t-add" hidden>
       <form class="g" id="bookForm">
         <label>Title<input name="title" required></label>
@@ -258,6 +264,12 @@ footer b{color:#fff}
       <div id="holList" style="margin-top:16px"></div>
     </div>
     <div id="t-promote" hidden></div>
+    <div id="t-signups" hidden></div>
+    <div id="t-restore" hidden>
+      <p style="color:var(--mute);margin-top:0">Choose a backup file made with <b>Download backup (Excel)</b>. Only the missing books, members and loans are added back. Nothing is deleted or overwritten. Restored members use their Member ID as the password.</p>
+      <input type="file" id="restoreFile" accept=".xlsx">
+      <div id="restorePreview" style="margin-top:12px"></div>
+    </div>
     <div id="t-cats" hidden></div>
     <div id="t-trash" hidden></div>
     <div id="t-settings" hidden>
@@ -341,7 +353,7 @@ footer b{color:#fff}
     <h3>Sign in</h3><p>Name or member ID, and your password. First time, your password is your member ID.</p>
     <label>Name or member ID<input name="username" autocomplete="username" required></label>
     <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
-    <div class="acts"><button type="button" class="btn" id="loginCancel">Cancel</button><button class="btn p">Sign in</button></div>
+    <div class="acts"><button type="button" class="btn" id="signupBtn" style="margin-right:auto">New member? Sign up</button><button type="button" class="btn" id="loginCancel">Cancel</button><button class="btn p">Sign in</button></div>
   </form>
 </dialog>
 
@@ -351,6 +363,13 @@ footer b{color:#fff}
     <label>Member ID<input id="askInput" required></label>
     <div class="acts"><button type="button" class="btn" id="askCancel">Cancel</button><button class="btn p" id="askOk">Issue book</button></div>
   </form>
+</dialog>
+
+<dialog id="signDlg">
+  <form method="dialog" id="signForm"><h3>New member</h3><p>Fill this in. The librarian will approve it and give you a Member ID.</p>
+    <label>Full name<input name="name" required></label><label>Class (e.g. 10 A)<input name="class_name"></label>
+    <label>Phone<input name="phone"></label><label>Email (optional)<input name="email" type="email"></label>
+    <div class="acts"><button type="button" class="btn" id="signCancel">Cancel</button><button class="btn p">Send request</button></div></form>
 </dialog>
 
 <dialog id="editDlg">
@@ -580,7 +599,7 @@ $$('.tab').forEach(b => b.onclick = () => {
   $$('.tab').forEach(x => x.classList.toggle('on', x === b)); loadTab(b.dataset.tab);
 });
 function loadTab(tab) {
-  ['dash', 'add', 'members', 'requests', 'overdue', 'history', 'import', 'scan', 'resv', 'reports', 'audit', 'print', 'papers', 'stock', 'dups', 'notices', 'cats', 'trash', 'settings', 'holidays', 'promote'].forEach(t => $('#t-' + t).hidden = t !== tab);
+  ['dash', 'add', 'members', 'requests', 'overdue', 'history', 'import', 'scan', 'resv', 'reports', 'audit', 'print', 'papers', 'stock', 'dups', 'notices', 'cats', 'trash', 'settings', 'holidays', 'promote', 'signups', 'restore'].forEach(t => $('#t-' + t).hidden = t !== tab);
   if (tab === 'dash') run(async () => {
     const d = await api('/api/stats'), n = x => Number(x).toLocaleString();
     const card = (v, l, c = '') => `<div class="stat ${c}"><b>${n(v)}</b><span>${l}</span></div>`;
@@ -590,6 +609,10 @@ function loadTab(tab) {
       books.forEach(b => { const k = b.category || 'General'; cats[k] = (cats[k] || 0) + 1; });
       $('#charts').innerHTML = `<h3>Loans per month</h3>${vbars(r.monthly)}<h3 style="margin-top:22px">Books by category</h3>${hbars(Object.entries(cats).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name, count]) => ({ name, count })))}`;
     } catch (e) { /* charts are optional */ }
+  });
+  if (tab === 'signups') run(async () => {
+    const r = await api('/api/signups');
+    $('#t-signups').innerHTML = r.map(x => `<div class="row" style="grid-template-columns:1.4fr 1fr auto"><div><b>${esc(x.name)}</b><span class="m">${esc(x.class_name || '')} &nbsp;·&nbsp; ${esc(x.phone || '')} &nbsp;·&nbsp; ${esc(x.email || '')}</span></div><div class="cat m">${esc(String(x.created_at).slice(0, 10))}</div><div class="acts"><button class="btn p" data-act="approveSignup" data-id="${x.id}">Approve</button><button class="btn d" data-act="rejectSignup" data-id="${x.id}">Reject</button></div></div>`).join('') || '<div class="empty">No sign-up requests.</div>';
   });
   if (tab === 'promote') run(async () => {
     const m = await api('/api/members'), c = {};
@@ -641,7 +664,7 @@ function loadTab(tab) {
     const bars = (a, lab = x => x.name) => { const mx = Math.max(1, ...a.map(x => x.count)); return a.map(x => `<div style="display:grid;grid-template-columns:minmax(120px,2fr) 3fr 40px;gap:10px;align-items:center;padding:5px 0"><span>${esc(lab(x))}</span><div style="background:var(--wash);border-radius:4px"><div style="height:14px;border-radius:4px;background:var(--gate);width:${x.count / mx * 100}%"></div></div><b>${x.count}</b></div>`).join('') || '<div class="empty">No data yet.</div>'; };
     $('#t-reports').innerHTML = `<div class="stats" style="margin-bottom:20px"><div class="stat gate"><b>${d.loans.toLocaleString()}</b><span>Total loans ever</span></div><div class="stat ok"><b>Rs. ${d.collected.toLocaleString()}</b><span>Fines collected</span></div><div class="stat"><b>Rs. ${(d.waived || 0).toLocaleString()}</b><span>Fines waived</span></div></div>
       <h3>Most borrowed books</h3>${bars(d.topBooks)}<h3 style="margin-top:22px">Most active readers</h3>${bars(d.topReaders)}<h3 style="margin-top:22px">Loans per month</h3>${bars(d.monthly)}
-      <p style="margin-top:20px"><button class="btn" onclick="window.print()">Print this report</button></p>`;
+      <p style="margin-top:20px"><button class="btn" onclick="window.print()">Print this report</button> <button class="btn" data-act="never">Books never borrowed</button></p><div id="neverBox"></div>`;
   });
   if (tab === 'audit') run(async () => {
     const a = await api('/api/audit');
@@ -804,6 +827,8 @@ function loadReaders() {
     readerYear = d.year; readerCount = d.me.count;
     $('#rdMe').innerHTML = `<div class="stat gate" style="margin-bottom:14px"><b>${d.me.count} / ${d.goal}</b><span>books borrowed in ${d.year}${d.me.rank ? ' · your rank #' + d.me.rank : ''}</span><div style="background:var(--wash);border-radius:4px;margin-top:8px"><div style="height:10px;border-radius:4px;background:var(--gate);width:${pct}%"></div></div></div>` + (d.me.count >= d.goal ? '<p><button class="btn p" data-act="cert">Print my certificate</button></p>' : '');
     $('#rdTop').innerHTML = d.top.map((x, i) => `<div class="row" style="grid-template-columns:50px 1fr auto"><b>#${i + 1}</b><div>${esc(x.name)}</div><div><b>${x.count}</b> books</div></div>`).join('') || '<div class="empty">No borrowing this year yet.</div>';
+    const cb = await api('/api/class-board');
+    $('#rdClass').innerHTML = cb.board.map((x, i) => `<div class="row" style="grid-template-columns:50px 1fr auto"><b>#${i + 1}</b><div>${esc(x.name)}${x.name === cb.mine ? ' <span class="chip a">your class</span>' : ''}</div><div><b>${x.count}</b> books &nbsp;·&nbsp; ${x.members} members</div></div>`).join('') || '<div class="empty">Classes appear here once members have a class.</div>';
   });
 }
 Object.assign(actions, {
@@ -891,6 +916,51 @@ window.addEventListener('online', () => setOffline(false));
 window.addEventListener('offline', () => setOffline(true));
 showOffline();
 if (!offline && me && getQ().length) syncQueue();
+
+// ---- restore, sign-ups, never borrowed, summary, text size ----
+let restoreData = null, neverCache = [];
+$('#restoreFile').onchange = e => run(async () => {
+  const f = e.target.files[0]; if (!f) return;
+  const wb = XLSX.read(await f.arrayBuffer());
+  const get = n => wb.Sheets[n] ? XLSX.utils.sheet_to_json(wb.Sheets[n], { defval: undefined }) : [];
+  restoreData = { books: get('Books'), members: get('Members'), loans: get('Loans') };
+  $('#restorePreview').innerHTML = `<b>${restoreData.books.length}</b> books, <b>${restoreData.members.length}</b> members, <b>${restoreData.loans.length}</b> loans found.` + (restoreData.books.length + restoreData.members.length ? '<p><button class="btn p" data-act="doRestore">Restore missing data</button></p>' : '<p class="m">This does not look like a backup file.</p>');
+});
+$('#signupBtn').onclick = () => { $('#loginDlg').close(); $('#signDlg').showModal(); };
+$('#signCancel').onclick = () => $('#signDlg').close();
+$('#signForm').onsubmit = e => { e.preventDefault(); run(async () => { await api('/api/signup', 'POST', Object.fromEntries(new FormData(e.target))); e.target.reset(); $('#signDlg').close(); }, 'Request sent. The librarian will contact you.'); };
+const SIZES = [1, 1.15, 1.3], SZL = ['A', 'A+', 'A++'];
+function setSize(i) { document.body.style.zoom = SIZES[i]; localStorage.setItem('kccSize', i); $('#sizeBtn').textContent = SZL[i]; }
+$('#sizeBtn').onclick = () => setSize(((+localStorage.getItem('kccSize') || 0) + 1) % 3);
+setSize(+localStorage.getItem('kccSize') || 0);
+Object.assign(actions, {
+  doRestore: () => confirm('Add the missing data from this backup?') && run(async () => {
+    const d = restoreData, out = $('#restorePreview');
+    const step = async (path, rows, size) => {
+      let n = 0;
+      for (let i = 0; i < rows.length; i += size) { const r = await api(path, 'POST', { rows: rows.slice(i, i + size) }); n += r.added || 0; out.innerHTML = `Working... ${path.split('/').pop()} ${Math.min(i + size, rows.length)} / ${rows.length}`; }
+      return n;
+    };
+    const nb = await step('/api/restore/books', d.books, 250), nm = await step('/api/restore/members', d.members, 300);
+    const byId = {}; d.books.forEach(b => byId[b.id] = b);
+    const nl = await step('/api/restore/loans', d.loans.map(l => ({ ...l, book_barcode: (byId[l.book_id] || {}).barcode, book_ledger: (byId[l.book_id] || {}).ledger_info })), 400);
+    const rc = await api('/api/restore/recount', 'POST');
+    out.innerHTML = `<b>Done.</b> ${nb} books, up to ${nm} members and ${nl} loans were added back. Counts fixed for ${rc.fixed} books.`;
+    restoreData = null; $('#restoreFile').value = ''; await loadBooks();
+  }),
+  approveSignup: id => openEdit('Approve member', [{ k: 'id', l: 'Member ID to give (e.g. admission number)', r: 1 }], {}, async v => { await api(`/api/signups/${id}/approve`, 'POST', { id: v.id }); loadTab('signups'); }),
+  rejectSignup: id => confirm('Reject this request?') && run(async () => { await api('/api/signups/' + id, 'DELETE'); loadTab('signups'); }, 'Rejected.'),
+  mailSummary: () => run(async () => { await api('/api/summary/email', 'POST'); }, 'Weekly summary emailed.'),
+  never: () => run(async () => {
+    neverCache = await api('/api/never');
+    $('#neverBox').innerHTML = `<h3>${neverCache.length} books never borrowed</h3><p><button class="btn" data-act="neverExcel">Download list (Excel)</button></p>` + neverCache.slice(0, 100).map(x => `<div class="row" style="grid-template-columns:2fr 1fr 1fr"><div><b>${esc(x.title)}</b><span class="m">${esc(x.author)}</span></div><div class="cat m">${esc(x.category)}</div><div class="m">${esc(x.ledger_info || '')}</div></div>`).join('') + (neverCache.length > 100 ? '<div class="empty">Download the Excel to see all.</div>' : '');
+  }),
+  neverExcel: () => {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(neverCache.map(x => ({ Title: x.title, Author: x.author, Category: x.category, 'Ledger No': x.ledger_info, Shelf: x.shelf }))), 'Never borrowed');
+    XLSX.writeFile(wb, 'never-borrowed-books.xlsx');
+  }
+});
 
 // ---- reading lists, class promotion, letters, poster ----
 let rlBooks = [];
@@ -1161,7 +1231,7 @@ const TA = {
   'Past papers and notes': 'கடந்தகால வினாத்தாள்கள் மற்றும் குறிப்புகள்', 'Search': 'தேடல்', 'Grade / Exam': 'தரம் / பரீட்சை', 'Type': 'வகை', 'No papers found yet.': 'இன்னும் வினாத்தாள்கள் இல்லை.',
   'Dashboard': 'முகப்புப் பலகை', 'Add a book': 'புத்தகம் சேர்', 'Members': 'உறுப்பினர்கள்', 'Requests': 'கோரிக்கைகள்', 'Overdue': 'தாமதமானவை', 'History': 'வரலாறு',
   'Import Excel': 'Excel இறக்கு', 'Scan': 'ஸ்கேன்', 'Reservations': 'முன்பதிவுகள்', 'Reports': 'அறிக்கைகள்', 'Activity': 'செயல்பாடு', 'Print cards': 'அட்டைகள் அச்சிடு',
-  'Papers': 'வினாத்தாள்கள்', 'Duplicates': 'இரட்டைப் பதிவுகள்', 'Notices': 'அறிவிப்புகள்', 'New arrivals': 'புதிய வரவுகள்', 'Popular': 'பிரபலமானவை', 'Lost / damaged': 'தொலைந்தவை / சேதமடைந்தவை', 'Post notice': 'அறிவிப்பு வெளியிடு', 'Readers': 'வாசகர்கள்', 'Designed & Developed by': 'வடிவமைத்து உருவாக்கியவர்:', 'Saved for later': 'பின்னர் படிக்க', 'Saved ✓': 'சேமிக்கப்பட்டது ✓', '★ Reviews': '★ விமர்சனங்கள்', 'Post review': 'விமர்சனம் இடு', 'No reviews yet.': 'இன்னும் விமர்சனங்கள் இல்லை.', 'Print my certificate': 'என் சான்றிதழை அச்சிடு', 'Email reminders now': 'மின்னஞ்சல் நினைவூட்டல் அனுப்பு', 'Email backup now': 'காப்புப் பிரதியை மின்னஞ்சலில் அனுப்பு', 'Readers of the year': 'ஆண்டின் சிறந்த வாசகர்கள்', 'Categories': 'வகைகள்', 'Parent view': 'பெற்றோர் பார்வை', 'Part / waive': 'பகுதி / தள்ளுபடி', 'Fines waived': 'தள்ளுபடி செய்த அபராதம்', 'Reading lists': 'வாசிப்புப் பட்டியல்கள்', 'Promote classes': 'வகுப்பு உயர்வு', 'Parent letters': 'பெற்றோர் கடிதங்கள்', 'Create list': 'பட்டியல் உருவாக்கு', 'Apply promotion': 'உயர்வைப் பயன்படுத்து', 'Print QR poster': 'QR சுவரொட்டி அச்சிடு', 'Condition of the book': 'புத்தகத்தின் நிலை', 'All books': 'அனைத்து புத்தகங்கள்', 'Available only': 'கிடைப்பவை மட்டும்', 'All languages': 'அனைத்து மொழிகள்', 'Tamil': 'தமிழ்', 'English / other': 'ஆங்கிலம் / பிற', 'Holidays': 'விடுமுறை நாட்கள்', 'Feature': 'முன்னிலைப்படுத்து', 'Show': 'காட்டு', 'See this book': 'இந்த புத்தகத்தைப் பார்', 'Recycle bin': 'குப்பைத் தொட்டி', 'Settings': 'அமைப்புகள்', 'Save settings': 'அமைப்புகளைச் சேமி', 'All classes': 'அனைத்து வகுப்புகள்', 'Print list': 'பட்டியல் அச்சிடு', 'Rename / merge': 'பெயர் மாற்று / இணை', 'Restore': 'மீட்டெடு', 'Delete forever': 'நிரந்தரமாக நீக்கு', 'Class': 'வகுப்பு', 'Loans per month': 'மாதாந்த இரவல்கள்', 'Books by category': 'வகை வாரியாக புத்தகங்கள்', 'Stock check': 'இருப்பு சரிபார்ப்பு', 'Total books': 'மொத்த புத்தகங்கள்', 'Book titles': 'புத்தகத் தலைப்புகள்',
+  'Papers': 'வினாத்தாள்கள்', 'Duplicates': 'இரட்டைப் பதிவுகள்', 'Notices': 'அறிவிப்புகள்', 'New arrivals': 'புதிய வரவுகள்', 'Popular': 'பிரபலமானவை', 'Lost / damaged': 'தொலைந்தவை / சேதமடைந்தவை', 'Post notice': 'அறிவிப்பு வெளியிடு', 'Readers': 'வாசகர்கள்', 'Designed & Developed by': 'வடிவமைத்து உருவாக்கியவர்:', 'Saved for later': 'பின்னர் படிக்க', 'Saved ✓': 'சேமிக்கப்பட்டது ✓', '★ Reviews': '★ விமர்சனங்கள்', 'Post review': 'விமர்சனம் இடு', 'No reviews yet.': 'இன்னும் விமர்சனங்கள் இல்லை.', 'Print my certificate': 'என் சான்றிதழை அச்சிடு', 'Email reminders now': 'மின்னஞ்சல் நினைவூட்டல் அனுப்பு', 'Email backup now': 'காப்புப் பிரதியை மின்னஞ்சலில் அனுப்பு', 'Readers of the year': 'ஆண்டின் சிறந்த வாசகர்கள்', 'Categories': 'வகைகள்', 'Parent view': 'பெற்றோர் பார்வை', 'Sign-ups': 'புதிய சேர்க்கைகள்', 'Restore': 'மீட்டெடு', 'New member? Sign up': 'புதிய உறுப்பினரா? பதிவு செய்யுங்கள்', 'Class competition': 'வகுப்புப் போட்டி', 'Books never borrowed': 'ஒருபோதும் இரவல் பெறாத புத்தகங்கள்', 'Email weekly summary now': 'வாராந்திர சுருக்கத்தை மின்னஞ்சலில் அனுப்பு', 'Part / waive': 'பகுதி / தள்ளுபடி', 'Fines waived': 'தள்ளுபடி செய்த அபராதம்', 'Reading lists': 'வாசிப்புப் பட்டியல்கள்', 'Promote classes': 'வகுப்பு உயர்வு', 'Parent letters': 'பெற்றோர் கடிதங்கள்', 'Create list': 'பட்டியல் உருவாக்கு', 'Apply promotion': 'உயர்வைப் பயன்படுத்து', 'Print QR poster': 'QR சுவரொட்டி அச்சிடு', 'Condition of the book': 'புத்தகத்தின் நிலை', 'All books': 'அனைத்து புத்தகங்கள்', 'Available only': 'கிடைப்பவை மட்டும்', 'All languages': 'அனைத்து மொழிகள்', 'Tamil': 'தமிழ்', 'English / other': 'ஆங்கிலம் / பிற', 'Holidays': 'விடுமுறை நாட்கள்', 'Feature': 'முன்னிலைப்படுத்து', 'Show': 'காட்டு', 'See this book': 'இந்த புத்தகத்தைப் பார்', 'Recycle bin': 'குப்பைத் தொட்டி', 'Settings': 'அமைப்புகள்', 'Save settings': 'அமைப்புகளைச் சேமி', 'All classes': 'அனைத்து வகுப்புகள்', 'Print list': 'பட்டியல் அச்சிடு', 'Rename / merge': 'பெயர் மாற்று / இணை', 'Restore': 'மீட்டெடு', 'Delete forever': 'நிரந்தரமாக நீக்கு', 'Class': 'வகுப்பு', 'Loans per month': 'மாதாந்த இரவல்கள்', 'Books by category': 'வகை வாரியாக புத்தகங்கள்', 'Stock check': 'இருப்பு சரிபார்ப்பு', 'Total books': 'மொத்த புத்தகங்கள்', 'Book titles': 'புத்தகத் தலைப்புகள்',
   'Available books': 'கிடைக்கும் புத்தகங்கள்', 'Borrowed books': 'இரவல் புத்தகங்கள்', 'Overdue books': 'தாமதமான புத்தகங்கள்', 'Pending requests': 'நிலுவை கோரிக்கைகள்',
   'Download backup (Excel)': 'காப்புப் பிரதி பதிவிறக்கு (Excel)', 'Title': 'தலைப்பு', 'Category': 'வகை', 'Ledger number': 'பேரேட்டு எண்', 'Ledger No': 'பேரேட்டு எண்',
   'Copies': 'பிரதிகள்', 'PDF link (optional)': 'PDF இணைப்பு (விருப்பம்)', 'Add book': 'புத்தகம் சேர்', 'Member ID': 'உறுப்பினர் எண்', 'Full name': 'முழுப்பெயர்',
