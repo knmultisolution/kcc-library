@@ -71,6 +71,10 @@ footer b{color:#fff}
 .pub{color:var(--mute);margin:-6px 0 8px;font-size:15px}.pub b{color:var(--ink)}
 @media print{header.bar,.hero,footer,.tabs,.btn,.nb,#toast{display:none!important}main{padding:0}.panel{border:0;padding:0}}
 #printArea{display:none}
+.letters .letter{page-break-after:always;padding:12mm 14mm;font-size:12pt;line-height:1.5;color:#000}
+.letter img{height:22mm}.letter h3{margin:2mm 0}.letter table{border-collapse:collapse;width:100%;margin:4mm 0}.letter td,.letter th{border:1px solid #888;padding:2mm 3mm;text-align:left}
+.poster{text-align:center;color:#000;padding-top:15mm}.poster img.lg{height:40mm}.poster h1{font-size:34pt;margin:6mm 0 2mm}.poster p{font-size:16pt;margin:2mm 0}#qrBox{display:inline-block;margin:8mm 0;padding:4mm;border:3px solid #000}
+@media print{body.pr #printArea.letters,body.pr #printArea.poster{display:block}}
 #offBar{background:#fff3cd;color:#5c4400;padding:8px 20px;text-align:center;font-size:14px}#offBar .btn{margin-left:8px;padding:3px 10px;color:#000;background:#fff}
 [data-theme=dark]{--ink:#e8eaed;--paper:#1f2428;--wash:#14181b;--line:#363e46;--mute:#9aa4ae;--ok:#4cc38a;--warn:#ff7a6b}
 [data-theme=dark] .btn,[data-theme=dark] label input,[data-theme=dark] label select,[data-theme=dark] .stat,[data-theme=dark] .tab{background:var(--paper);color:var(--ink)}
@@ -98,6 +102,7 @@ footer b{color:#fff}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-192.png">
@@ -113,6 +118,7 @@ footer b{color:#fff}
     <button class="nb" data-view="papers">Past papers</button>
     <button class="nb" data-view="parent">Parent view</button>
     <button class="nb" data-view="my" id="navMy" hidden>My books</button>
+    <button class="nb" data-view="lists" id="navLists" hidden>Reading lists</button>
     <button class="nb" data-view="readers" id="navReaders" hidden>Readers</button>
     <button class="nb" data-view="request" id="navReq" hidden>Request a book</button>
     <button class="nb" data-view="admin" id="navAdmin" hidden>Librarian desk</button>
@@ -153,6 +159,12 @@ footer b{color:#fff}
       <div style="align-self:end"><button class="btn p">Show</button></div>
     </form>
     <div id="parentOut" style="margin-top:18px"></div>
+  </section>
+
+  <section id="v-lists" class="panel" hidden>
+    <h2>Reading lists</h2>
+    <div id="listForm"></div>
+    <div id="listsOut"></div>
   </section>
 
   <section id="v-readers" class="panel" hidden>
@@ -196,6 +208,7 @@ footer b{color:#fff}
       <button class="tab" data-tab="trash">Recycle bin</button>
       <button class="tab" data-tab="settings">Settings</button>
       <button class="tab" data-tab="holidays">Holidays</button>
+      <button class="tab" data-tab="promote">Promote classes</button>
     </div>
     <div id="t-dash"><div class="stats" id="stats"></div>
       <div id="charts" style="margin-top:22px"></div>
@@ -208,6 +221,8 @@ footer b{color:#fff}
         <label>Ledger number<input name="ledger_info"></label>
         <label>Copies<input name="quantity" type="number" min="1" value="1"></label>
         <label>PDF link (optional)<input name="pdf_url" type="url"></label>
+        <label>Shelf / rack (e.g. Rack 3 B)<input name="shelf"></label>
+        <label>Donated by (optional)<input name="donated_by"></label>
         <div style="align-self:end"><button class="btn p">Add book</button></div>
       </form>
     </div>
@@ -242,6 +257,7 @@ footer b{color:#fff}
       <form class="g" id="holForm"><label>Date<input name="day" type="date" required></label><label>Name<input name="name" placeholder="e.g. Poya day"></label><div style="align-self:end"><button class="btn p">Add holiday</button></div></form>
       <div id="holList" style="margin-top:16px"></div>
     </div>
+    <div id="t-promote" hidden></div>
     <div id="t-cats" hidden></div>
     <div id="t-trash" hidden></div>
     <div id="t-settings" hidden>
@@ -300,6 +316,7 @@ footer b{color:#fff}
         <label>From book no.<input id="plFrom" type="number" min="1" value="1"></label>
         <label>To book no.<input id="plTo" type="number" min="1" value="60"></label>
         <div style="align-self:end"><button class="btn p" data-act="printLabels">Print labels</button></div></div>
+      <h3 style="margin-top:28px">QR poster</h3><p style="color:var(--mute)">A poster with a QR code. Students scan it with a phone to open this website.</p><button class="btn p" data-act="printPoster">Print QR poster</button>
       <p style="color:var(--mute)">Print about 60 labels at a time (From 1 To 60, then 61 to 120 ...). In the print window choose A4 and turn on "Background graphics".</p>
     </div>
     <div id="t-resv" hidden></div>
@@ -398,10 +415,11 @@ const run = async (fn, ok) => { try { await fn(); if (ok) toast(ok); } catch (e)
 
 // ---- views ----
 function show(view) {
-  ['catalog', 'papers', 'parent', 'my', 'readers', 'request', 'admin'].forEach(v => $('#v-' + v).hidden = v !== view);
+  ['catalog', 'papers', 'parent', 'my', 'lists', 'readers', 'request', 'admin'].forEach(v => $('#v-' + v).hidden = v !== view);
   $$('.nb[data-view]').forEach(b => b.classList.toggle('on', b.dataset.view === view));
   if (view === 'my') loadMy();
   if (view === 'readers') loadReaders();
+  if (view === 'lists') loadLists();
   if (view === 'papers') loadPapers();
   if (view === 'admin') loadTab(document.querySelector('.tab.on').dataset.tab);
 }
@@ -414,6 +432,7 @@ function refreshChrome() {
   $('#navPw').hidden = !(me && me.memberId);
   $('#navAdmin').hidden = !(me && (me.role === 'admin' || me.role === 'viewer'));
   $('#navReaders').hidden = !(me && me.memberId);
+  $('#navLists').hidden = !(me && (me.memberId || me.role === 'admin'));
   if (!me || (!['admin', 'viewer'].includes(me.role) && !$('#v-admin').hidden)) show('catalog');
   renderBooks(); loadExtras(); if (me && me.role === 'admin' && !offline) prefetchOffline();
 }
@@ -463,7 +482,7 @@ function phon(str) {
 }
 const hasTamil = s => /[஀-௿]/.test(s);
 function matches(b, q) {
-  const raw = [b.title, b.author, b.ledger_info, b.barcode].join(' ').toLowerCase();
+  const raw = [b.title, b.author, b.ledger_info, b.barcode, b.shelf, b.donated_by].join(' ').toLowerCase();
   if (!b._k) b._k = phon(translit(raw));
   return q.split(/\s+/).filter(Boolean).every(t => raw.includes(t) || (!hasTamil(t) && b._k.includes(phon(t))));
 }
@@ -522,7 +541,7 @@ function renderBooks() {
   const all = books.filter(b => (!c || b.category === c) && okFilters(b) && matches(b, t.trim())), rows = all.slice(0, 100);
   $('#list').innerHTML = rows.length ? rows.map(b => `
     <div class="row">
-      <div style="display:flex;gap:10px;align-items:center">${cover(b)}<div><b>${esc(b.title)}</b>${starsOf(b)}<span class="m">${esc(b.author)}${b.ledger_info && b.ledger_info !== 'N/A' ? ' &nbsp;·&nbsp; Ledger ' + esc(b.ledger_info) : ''}</span></div></div>
+      <div style="display:flex;gap:10px;align-items:center">${cover(b)}<div><b>${esc(b.title)}</b>${starsOf(b)}<span class="m">${esc(b.author)}${b.ledger_info && b.ledger_info !== 'N/A' ? ' &nbsp;·&nbsp; Ledger ' + esc(b.ledger_info) : ''}${b.shelf ? ' &nbsp;·&nbsp; 📍 ' + esc(b.shelf) : ''}${b.donated_by ? ' &nbsp;·&nbsp; 🎁 ' + esc(b.donated_by) : ''}</span></div></div>
       <div class="cat m">${esc(b.category)}</div>
       <div>${chip(b)}</div>
       <div class="acts">
@@ -556,7 +575,7 @@ $$('.tab').forEach(b => b.onclick = () => {
   $$('.tab').forEach(x => x.classList.toggle('on', x === b)); loadTab(b.dataset.tab);
 });
 function loadTab(tab) {
-  ['dash', 'add', 'members', 'requests', 'overdue', 'history', 'import', 'scan', 'resv', 'reports', 'audit', 'print', 'papers', 'stock', 'dups', 'notices', 'cats', 'trash', 'settings', 'holidays'].forEach(t => $('#t-' + t).hidden = t !== tab);
+  ['dash', 'add', 'members', 'requests', 'overdue', 'history', 'import', 'scan', 'resv', 'reports', 'audit', 'print', 'papers', 'stock', 'dups', 'notices', 'cats', 'trash', 'settings', 'holidays', 'promote'].forEach(t => $('#t-' + t).hidden = t !== tab);
   if (tab === 'dash') run(async () => {
     const d = await api('/api/stats'), n = x => Number(x).toLocaleString();
     const card = (v, l, c = '') => `<div class="stat ${c}"><b>${n(v)}</b><span>${l}</span></div>`;
@@ -566,6 +585,14 @@ function loadTab(tab) {
       books.forEach(b => { const k = b.category || 'General'; cats[k] = (cats[k] || 0) + 1; });
       $('#charts').innerHTML = `<h3>Loans per month</h3>${vbars(r.monthly)}<h3 style="margin-top:22px">Books by category</h3>${hbars(Object.entries(cats).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name, count]) => ({ name, count })))}`;
     } catch (e) { /* charts are optional */ }
+  });
+  if (tab === 'promote') run(async () => {
+    const m = await api('/api/members'), c = {};
+    m.filter(x => x.status !== 'Inactive' && x.class_name).forEach(x => c[x.class_name] = (c[x.class_name] || 0) + 1);
+    const next = n => { const g = /^(\d+)(.*)$/.exec(n.trim()); return g ? (+g[1] >= 13 ? '-' : (+g[1] + 1) + g[2]) : ''; };
+    $('#t-promote').innerHTML = '<p style="color:var(--mute);margin-top:0">Use this at the end of the school year. Each class moves to the new name you type. Type - (a dash) if the class has left school; those members become Inactive. Clear the box to keep a class as it is. Download a backup first.</p>'
+      + (Object.keys(c).sort().map(n => `<div class="row" style="grid-template-columns:1fr 160px"><div><b>${esc(n)}</b><span class="m">${c[n]} members</span></div><div><input data-from="${esc(n)}" value="${esc(next(n))}" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--paper);color:var(--ink)"></div></div>`).join('') || '<div class="empty">No members have a class yet. Add classes in the Members tab first.</div>')
+      + (Object.keys(c).length ? '<p style="margin-top:14px"><button class="btn p" data-act="applyPromote">Apply promotion</button></p>' : '');
   });
   if (tab === 'holidays') run(async () => {
     const hs = await api('/api/holidays');
@@ -633,7 +660,7 @@ function loadTab(tab) {
   });
   if (tab === 'history') run(async () => {
     const h = await api('/api/history');
-    $('#t-history').innerHTML = h.map(x => `<div class="row"><div><b>${esc(x.book_title)}</b><span class="m">${esc(x.borrower_name)} (${esc(x.borrower_id)})</span></div><div class="cat m">Issued ${esc(x.issue_date)}</div><div>${x.return_date ? '<span class="chip a">Returned ' + esc(x.return_date) + '</span>' : '<span class="chip b">Out</span>'}</div><div></div></div>`).join('') || '<div class="empty">No borrowing history yet.</div>';
+    $('#t-history').innerHTML = h.map(x => `<div class="row"><div><b>${esc(x.book_title)}</b><span class="m">${esc(x.borrower_name)} (${esc(x.borrower_id)})</span></div><div class="cat m">Issued ${esc(x.issue_date)}</div><div>${x.return_date ? '<span class="chip a">Returned ' + esc(x.return_date) + '</span>' : '<span class="chip b">Out</span>'}${x.condition && x.condition !== 'Good' ? ' <span class="chip b">' + esc(x.condition) + '</span>' : ''}</div><div></div></div>`).join('') || '<div class="empty">No borrowing history yet.</div>';
   });
 }
 
@@ -663,12 +690,13 @@ const actions = {
   returnLoan: id => run(async () => {
     const l = curLoans.find(x => x.id == id), fine = lateOf(l.due_date) * (l.rate || 20);
     const finePaid = fine > 0 && confirm(`Fine: Rs. ${fine} (${lateOf(l.due_date)} days late).\n\nOK = fine collected\nCancel = not paid yet`);
-    await api(`/api/loans/${id}/return`, 'POST', { finePaid }); $('#loanDlg').close(); await loadBooks();
-  }, 'Book returned.'),
+    openEdit('Condition of the book', [{ k: 'condition', l: 'Condition', opts: ['Good', 'Slightly damaged', 'Damaged', 'Pages missing'] }, { k: 'note', l: 'Note (optional)' }], { condition: 'Good' },
+      async v => { await api(`/api/loans/${id}/return`, 'POST', { finePaid, condition: v.condition, note: v.note }); $('#loanDlg').close(); await loadBooks(); });
+  }),
   renewLoan: id => run(async () => { await api(`/api/loans/${id}/renew`, 'POST'); $('#loanDlg').close(); await loadBooks(); }, 'Renewed.'),
   renew: id => run(async () => { await api(`/api/loans/${id}/renew`, 'POST'); loadMy(); }, 'Renewed.'),
   paid: id => run(async () => { await api(`/api/loans/${id}/paid`, 'POST'); loadTab('overdue'); }, 'Fine marked as paid.'),
-  editBook: id => openEdit('Edit book', [{ k: 'title', l: 'Title', r: 1 }, { k: 'author', l: 'Author' }, { k: 'category', l: 'Category' }, { k: 'ledger_info', l: 'Ledger No' }, { k: 'quantity', l: 'Copies', t: 'number' }, { k: 'lost_count', l: 'Lost or damaged copies', t: 'number' }, { k: 'isbn', l: 'ISBN (for cover picture)' }, { k: 'pdf_url', l: 'PDF link' }],
+  editBook: id => openEdit('Edit book', [{ k: 'title', l: 'Title', r: 1 }, { k: 'author', l: 'Author' }, { k: 'category', l: 'Category' }, { k: 'ledger_info', l: 'Ledger No' }, { k: 'quantity', l: 'Copies', t: 'number' }, { k: 'lost_count', l: 'Lost or damaged copies', t: 'number' }, { k: 'isbn', l: 'ISBN (for cover picture)' }, { k: 'shelf', l: 'Shelf / rack (e.g. Rack 3 B)' }, { k: 'donated_by', l: 'Donated by' }, { k: 'pdf_url', l: 'PDF link' }],
     books.find(x => x.id == id), async v => { await api('/api/books/' + id, 'PUT', v); await loadBooks(); }),
   editMember: id => openEdit('Edit member', [{ k: 'name', l: 'Full name', r: 1 }, { k: 'email', l: 'Email' }, { k: 'phone', l: 'Phone (WhatsApp)' }, { k: 'class_name', l: 'Class (e.g. 10 A)' }, { k: 'role', l: 'Role', opts: ['Student', 'Teacher', 'Librarian', 'Viewer'] }, { k: 'status', l: 'Status', opts: ['Active', 'Inactive'] }, { k: 'password', l: 'New password (leave empty to keep)', t: 'password' }],
     memCache.find(x => x.id === id), async v => { await api('/api/members/' + encodeURIComponent(id), 'PUT', v); loadTab('members'); }),
@@ -709,7 +737,7 @@ const ALIAS = {
   author: ['author', 'writer', 'ஆசிரியர்'],
   category: ['category', 'type', 'subject', 'வகை'],
   ledger_info: ['ledger no', 'ledger', 'ledger_info', 'ledger number', 'accession no'],
-  quantity: ['quantity', 'copies', 'qty', 'count']
+  quantity: ['quantity', 'copies', 'qty', 'count'], shelf: ['shelf', 'rack', 'location'], donated_by: ['donated by', 'donor']
 };
 let importRows = [];
 $('#xlsFile').onchange = e => run(async () => {
@@ -719,9 +747,9 @@ $('#xlsFile').onchange = e => run(async () => {
   const head = (rows[0] || []).map(x => String(x).trim().toLowerCase());
   let idx = {}; for (const k in ALIAS) idx[k] = head.findIndex(x => ALIAS[k].includes(x));
   let body = rows.slice(1);
-  if (idx.title < 0) { idx = { title: 0, author: 1, category: 2, ledger_info: 3, quantity: 4 }; body = rows; }
+  if (idx.title < 0) { idx = { title: 0, author: 1, category: 2, ledger_info: 3, quantity: 4, shelf: 5, donated_by: 6 }; body = rows; }
   const get = (r, k) => idx[k] >= 0 ? String(r[idx[k]] ?? '').trim() : '';
-  importRows = body.map(r => ({ title: get(r, 'title'), author: get(r, 'author'), category: get(r, 'category'), ledger_info: get(r, 'ledger_info'), quantity: get(r, 'quantity') })).filter(r => r.title);
+  importRows = body.map(r => ({ title: get(r, 'title'), author: get(r, 'author'), category: get(r, 'category'), ledger_info: get(r, 'ledger_info'), quantity: get(r, 'quantity'), shelf: get(r, 'shelf'), donated_by: get(r, 'donated_by') })).filter(r => r.title);
   $('#xlsPreview').innerHTML = importRows.length
     ? `<b>${importRows.length} books kandupidichaachu.</b> Modhal 5 paarunga:` + importRows.slice(0, 5).map(r => `<div class="row"><div><b>${esc(r.title)}</b><span class="m">${esc(r.author)}</span></div><div class="cat m">${esc(r.category)}</div><div class="m">${esc(r.ledger_info)}</div><div></div></div>`).join('') + `<div style="margin-top:14px"><button class="btn p" data-act="doImport">Import ${importRows.length} books</button></div>`
     : '<div class="empty">Books edhuvum kidaikkala. Header row (Title, Author...) sari irukka nu paarunga.</div>';
@@ -853,6 +881,49 @@ window.addEventListener('offline', () => setOffline(true));
 showOffline();
 if (!offline && me && getQ().length) syncQueue();
 
+// ---- reading lists, class promotion, letters, poster ----
+let rlBooks = [];
+const canMakeLists = () => me && (me.role === 'admin' || me.memberRole === 'Teacher');
+function loadLists() {
+  run(async () => {
+    const L = await api('/api/reading-lists'), mk = canMakeLists();
+    $('#listForm').innerHTML = mk ? `<div class="panel" style="padding:14px;margin-bottom:16px"><h3 style="margin-top:0">New reading list</h3><div class="g2"><label>Title<input id="rlTitle"></label><label>Class (empty = everyone)<input id="rlClass" placeholder="e.g. 10 A"></label><label>Note<input id="rlNote"></label></div><label style="margin-top:10px">Search books to add<input id="rlSearch" autocomplete="off"></label><div id="rlResults"></div><div id="rlSel" style="margin:8px 0"></div><button class="btn p" data-act="rlCreate">Create list</button></div>` : '';
+    if (mk) { rlBooks = []; $('#rlSearch').oninput = rlSearch; }
+    $('#listsOut').innerHTML = L.map(l => `<div class="panel" style="padding:14px;margin-bottom:12px"><b>${esc(l.title)}</b> ${l.class_name ? `<span class="chip a">${esc(l.class_name)}</span>` : ''}<div class="m" style="color:var(--mute)">${esc(l.note || '')} &nbsp;·&nbsp; by ${esc(l.created_by || '')}${mk && (me.role === 'admin' || l.created_by === me.name) ? ` <button class="btn d" data-act="rlRemove" data-id="${l.id}">Delete</button>` : ''}</div>${(l.book_ids || []).map(id => books.find(b => b.id === id)).filter(Boolean).map(b => `<div class="row" style="grid-template-columns:1fr auto auto"><div><b>${esc(b.title)}</b><span class="m">${esc(b.author)}</span></div><div>${chip(b)}</div><div><button class="btn" data-act="rlSee" data-id="${b.id}">See</button></div></div>`).join('')}</div>`).join('') || '<div class="empty">No reading lists yet.</div>';
+  });
+}
+function rlSearch() {
+  const t = $('#rlSearch').value.trim().toLowerCase();
+  $('#rlResults').innerHTML = t ? books.filter(b => matches(b, t)).slice(0, 6).map(b => `<div class="row" style="grid-template-columns:1fr auto;padding:6px 4px"><div>${esc(b.title)}</div><div><button class="btn" data-act="rlAdd" data-id="${b.id}">Add</button></div></div>`).join('') : '';
+}
+function rlShow() {
+  $('#rlSel').innerHTML = rlBooks.map(id => { const b = books.find(x => x.id === id); return b ? `<span class="chip a" style="margin:2px">${esc(b.title)} <button class="btn" style="padding:0 6px" data-act="rlDel" data-id="${id}">✕</button></span>` : ''; }).join('');
+}
+Object.assign(actions, {
+  rlAdd: id => { if (!rlBooks.includes(+id)) rlBooks.push(+id); rlShow(); },
+  rlDel: id => { rlBooks = rlBooks.filter(x => x !== +id); rlShow(); },
+  rlSee: id => { show('catalog'); actions.pick(id); },
+  rlCreate: () => run(async () => { await api('/api/reading-lists', 'POST', { title: $('#rlTitle').value, class_name: $('#rlClass').value, note: $('#rlNote').value, bookIds: rlBooks }); loadLists(); }, 'Reading list created.'),
+  rlRemove: id => confirm('Delete this reading list?') && run(async () => { await api('/api/reading-lists/' + id, 'DELETE'); loadLists(); }, 'Deleted.'),
+  applyPromote: () => confirm('Move these classes now? Download a backup first if you have not.') && run(async () => {
+    const moves = $$('#t-promote input[data-from]').map(i => ({ from: i.dataset.from, to: i.value.trim() })).filter(m => m.to && m.to !== m.from);
+    const r = await api('/api/members/promote', 'POST', { moves });
+    toast(`${r.moved} member(s) moved, ${r.left} marked as left school.`); loadTab('promote');
+  }),
+  printLetters: () => {
+    if (!ovList.length) return toast('No overdue books to print.', true);
+    const by = {}; ovList.forEach(x => (by[x.borrower_id] = by[x.borrower_id] || { name: x.borrower_name, cls: x.class_name, items: [] }).items.push(x));
+    const day = new Date().toISOString().slice(0, 10);
+    try {
+      doPrint(Object.values(by).map(p => `<div class="letter"><img src="kcc_logo.png" alt=""><h3>Kilinochchi Central College - School Library<br>கிளிநொச்சி மத்திய கல்லூரி - பாடசாலை நூலகம்</h3><p>${day}</p><p>அன்புடையீர்,<br>உங்கள் பிள்ளை <b>${esc(p.name)}</b> ${p.cls ? '(' + esc(p.cls) + ') ' : ''}எமது நூலகத்தில் இரவலாகப் பெற்ற பின்வரும் புத்தகங்கள் உரிய திகதியில் திருப்பித் தரப்படவில்லை. தயவுசெய்து விரைவில் நூலகத்தில் ஒப்படைக்குமாறு கேட்டுக்கொள்கிறோம்.</p><p>Dear Parent / Guardian,<br>Your child <b>${esc(p.name)}</b> ${p.cls ? '(' + esc(p.cls) + ') ' : ''}has not returned the following library books on time. Please ask your child to return them to the library as soon as possible.</p><table><tr><th>Book</th><th>Due</th><th>Days late</th><th>Fine (Rs.)</th></tr>${p.items.map(x => `<tr><td>${esc(x.title)}</td><td>${esc(x.due_date)}</td><td>${x.days}</td><td>${x.fine}</td></tr>`).join('')}</table><p>மொத்த அபராதம் / Total fine: <b>Rs. ${p.items.reduce((a, x) => a + x.fine, 0)}</b></p><p style="margin-top:14mm">நன்றி / Thank you.<br>நூலகர் / Librarian</p></div>`).join(''), 'letters');
+    } catch (e) { toast(e.message, true); }
+  },
+  printPoster: () => run(async () => {
+    if (!window.QRCode) throw new Error('QR library did not load. Check your internet and try again.');
+    doPrint(`<img class="lg" src="kcc_logo.png" alt=""><h1>கிளிநொச்சி மத்திய கல்லூரி</h1><p><b>Kilinochchi Central College</b></p><p>School Library &nbsp;·&nbsp; பாடசாலை நூலகம்</p><div id="qrBox"></div><p>Scan to search books and see your loans</p><p>புத்தகங்களைத் தேட, உங்கள் இரவல்களைப் பார்க்க ஸ்கேன் செய்யுங்கள்</p><p style="font-size:13pt">${esc(location.origin)}</p>`, 'poster', () => new QRCode($('#qrBox'), { text: location.origin, width: 280, height: 280 }));
+  })
+});
+
 // ---- parent view, holidays, book of the week, dark mode ----
 $('#parentForm').onsubmit = e => {
   e.preventDefault();
@@ -874,7 +945,7 @@ Object.assign(actions, {
 
 // ---- charts, overdue list, categories, recycle bin ----
 let ovClass = '', ovList = [];
-const ovBar = a => '<p><select id="ovClass"><option value="">All classes</option>' + [...new Set(a.map(x => x.class_name).filter(Boolean))].sort().map(c => `<option${c === ovClass ? ' selected' : ''}>${esc(c)}</option>`).join('') + '</select> <button class="btn" data-act="printOverdue">Print list</button></p>';
+const ovBar = a => '<p><select id="ovClass"><option value="">All classes</option>' + [...new Set(a.map(x => x.class_name).filter(Boolean))].sort().map(c => `<option${c === ovClass ? ' selected' : ''}>${esc(c)}</option>`).join('') + '</select> <button class="btn" data-act="printOverdue">Print list</button> <button class="btn" data-act="printLetters">Parent letters</button></p>';
 $('#t-overdue').addEventListener('change', e => { if (e.target.id === 'ovClass') { ovClass = e.target.value; loadTab('overdue'); } });
 const hbars = a => { const mx = Math.max(1, ...a.map(x => x.count)); return a.map(x => `<div style="display:grid;grid-template-columns:minmax(110px,2fr) 3fr 50px;gap:10px;align-items:center;padding:5px 0"><span>${esc(x.name)}</span><div style="background:var(--wash);border-radius:4px"><div style="height:14px;border-radius:4px;background:var(--slate);width:${x.count / mx * 100}%"></div></div><b>${x.count}</b></div>`).join('') || '<div class="empty">No data yet.</div>'; };
 const vbars = a => {
@@ -995,10 +1066,11 @@ $('#paperForm').onsubmit = e => {
 };
 
 // ---- printing and PDF upload ----
-function doPrint(html, cls) {
+function doPrint(html, cls, after) {
   if (!window.JsBarcode) throw new Error('Barcode library did not load. Check your internet and try again.');
   const a = $('#printArea'); a.className = cls; a.innerHTML = html;
   $$('#printArea svg.bc').forEach(s => JsBarcode(s, s.dataset.v, { format: 'CODE128', height: cls === 'cards' ? 34 : 26, fontSize: 11, margin: 2, displayValue: true }));
+  if (after) after();
   document.body.classList.add('pr');
   setTimeout(() => { window.print(); document.body.classList.remove('pr'); }, 500);
 }
@@ -1078,7 +1150,7 @@ const TA = {
   'Past papers and notes': 'கடந்தகால வினாத்தாள்கள் மற்றும் குறிப்புகள்', 'Search': 'தேடல்', 'Grade / Exam': 'தரம் / பரீட்சை', 'Type': 'வகை', 'No papers found yet.': 'இன்னும் வினாத்தாள்கள் இல்லை.',
   'Dashboard': 'முகப்புப் பலகை', 'Add a book': 'புத்தகம் சேர்', 'Members': 'உறுப்பினர்கள்', 'Requests': 'கோரிக்கைகள்', 'Overdue': 'தாமதமானவை', 'History': 'வரலாறு',
   'Import Excel': 'Excel இறக்கு', 'Scan': 'ஸ்கேன்', 'Reservations': 'முன்பதிவுகள்', 'Reports': 'அறிக்கைகள்', 'Activity': 'செயல்பாடு', 'Print cards': 'அட்டைகள் அச்சிடு',
-  'Papers': 'வினாத்தாள்கள்', 'Duplicates': 'இரட்டைப் பதிவுகள்', 'Notices': 'அறிவிப்புகள்', 'New arrivals': 'புதிய வரவுகள்', 'Popular': 'பிரபலமானவை', 'Lost / damaged': 'தொலைந்தவை / சேதமடைந்தவை', 'Post notice': 'அறிவிப்பு வெளியிடு', 'Readers': 'வாசகர்கள்', 'Designed & Developed by': 'வடிவமைத்து உருவாக்கியவர்:', 'Saved for later': 'பின்னர் படிக்க', 'Saved ✓': 'சேமிக்கப்பட்டது ✓', '★ Reviews': '★ விமர்சனங்கள்', 'Post review': 'விமர்சனம் இடு', 'No reviews yet.': 'இன்னும் விமர்சனங்கள் இல்லை.', 'Print my certificate': 'என் சான்றிதழை அச்சிடு', 'Email reminders now': 'மின்னஞ்சல் நினைவூட்டல் அனுப்பு', 'Email backup now': 'காப்புப் பிரதியை மின்னஞ்சலில் அனுப்பு', 'Readers of the year': 'ஆண்டின் சிறந்த வாசகர்கள்', 'Categories': 'வகைகள்', 'Parent view': 'பெற்றோர் பார்வை', 'All books': 'அனைத்து புத்தகங்கள்', 'Available only': 'கிடைப்பவை மட்டும்', 'All languages': 'அனைத்து மொழிகள்', 'Tamil': 'தமிழ்', 'English / other': 'ஆங்கிலம் / பிற', 'Holidays': 'விடுமுறை நாட்கள்', 'Feature': 'முன்னிலைப்படுத்து', 'Show': 'காட்டு', 'See this book': 'இந்த புத்தகத்தைப் பார்', 'Recycle bin': 'குப்பைத் தொட்டி', 'Settings': 'அமைப்புகள்', 'Save settings': 'அமைப்புகளைச் சேமி', 'All classes': 'அனைத்து வகுப்புகள்', 'Print list': 'பட்டியல் அச்சிடு', 'Rename / merge': 'பெயர் மாற்று / இணை', 'Restore': 'மீட்டெடு', 'Delete forever': 'நிரந்தரமாக நீக்கு', 'Class': 'வகுப்பு', 'Loans per month': 'மாதாந்த இரவல்கள்', 'Books by category': 'வகை வாரியாக புத்தகங்கள்', 'Stock check': 'இருப்பு சரிபார்ப்பு', 'Total books': 'மொத்த புத்தகங்கள்', 'Book titles': 'புத்தகத் தலைப்புகள்',
+  'Papers': 'வினாத்தாள்கள்', 'Duplicates': 'இரட்டைப் பதிவுகள்', 'Notices': 'அறிவிப்புகள்', 'New arrivals': 'புதிய வரவுகள்', 'Popular': 'பிரபலமானவை', 'Lost / damaged': 'தொலைந்தவை / சேதமடைந்தவை', 'Post notice': 'அறிவிப்பு வெளியிடு', 'Readers': 'வாசகர்கள்', 'Designed & Developed by': 'வடிவமைத்து உருவாக்கியவர்:', 'Saved for later': 'பின்னர் படிக்க', 'Saved ✓': 'சேமிக்கப்பட்டது ✓', '★ Reviews': '★ விமர்சனங்கள்', 'Post review': 'விமர்சனம் இடு', 'No reviews yet.': 'இன்னும் விமர்சனங்கள் இல்லை.', 'Print my certificate': 'என் சான்றிதழை அச்சிடு', 'Email reminders now': 'மின்னஞ்சல் நினைவூட்டல் அனுப்பு', 'Email backup now': 'காப்புப் பிரதியை மின்னஞ்சலில் அனுப்பு', 'Readers of the year': 'ஆண்டின் சிறந்த வாசகர்கள்', 'Categories': 'வகைகள்', 'Parent view': 'பெற்றோர் பார்வை', 'Reading lists': 'வாசிப்புப் பட்டியல்கள்', 'Promote classes': 'வகுப்பு உயர்வு', 'Parent letters': 'பெற்றோர் கடிதங்கள்', 'Create list': 'பட்டியல் உருவாக்கு', 'Apply promotion': 'உயர்வைப் பயன்படுத்து', 'Print QR poster': 'QR சுவரொட்டி அச்சிடு', 'Condition of the book': 'புத்தகத்தின் நிலை', 'All books': 'அனைத்து புத்தகங்கள்', 'Available only': 'கிடைப்பவை மட்டும்', 'All languages': 'அனைத்து மொழிகள்', 'Tamil': 'தமிழ்', 'English / other': 'ஆங்கிலம் / பிற', 'Holidays': 'விடுமுறை நாட்கள்', 'Feature': 'முன்னிலைப்படுத்து', 'Show': 'காட்டு', 'See this book': 'இந்த புத்தகத்தைப் பார்', 'Recycle bin': 'குப்பைத் தொட்டி', 'Settings': 'அமைப்புகள்', 'Save settings': 'அமைப்புகளைச் சேமி', 'All classes': 'அனைத்து வகுப்புகள்', 'Print list': 'பட்டியல் அச்சிடு', 'Rename / merge': 'பெயர் மாற்று / இணை', 'Restore': 'மீட்டெடு', 'Delete forever': 'நிரந்தரமாக நீக்கு', 'Class': 'வகுப்பு', 'Loans per month': 'மாதாந்த இரவல்கள்', 'Books by category': 'வகை வாரியாக புத்தகங்கள்', 'Stock check': 'இருப்பு சரிபார்ப்பு', 'Total books': 'மொத்த புத்தகங்கள்', 'Book titles': 'புத்தகத் தலைப்புகள்',
   'Available books': 'கிடைக்கும் புத்தகங்கள்', 'Borrowed books': 'இரவல் புத்தகங்கள்', 'Overdue books': 'தாமதமான புத்தகங்கள்', 'Pending requests': 'நிலுவை கோரிக்கைகள்',
   'Download backup (Excel)': 'காப்புப் பிரதி பதிவிறக்கு (Excel)', 'Title': 'தலைப்பு', 'Category': 'வகை', 'Ledger number': 'பேரேட்டு எண்', 'Ledger No': 'பேரேட்டு எண்',
   'Copies': 'பிரதிகள்', 'PDF link (optional)': 'PDF இணைப்பு (விருப்பம்)', 'Add book': 'புத்தகம் சேர்', 'Member ID': 'உறுப்பினர் எண்', 'Full name': 'முழுப்பெயர்',
