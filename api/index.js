@@ -39,7 +39,7 @@ app.use((req, res, next) => {
       if (res.statusCode >= 400) return;
       const u = verify((req.headers.authorization || '').replace('Bearer ', ''));
       const b = req.body || {};
-      db.from('audit').insert({ who: u ? u.name : '?', action: req.method + ' ' + req.path, detail: String(b.title || b.name || b.borrowerId || '').slice(0, 80) }).then(() => {}, () => {});
+      db.from('audit').insert({ who: u ? u.name : '?', action: req.method + ' ' + req.path, detail: String(b.title || b.name || b.borrowerId || b.note || '').slice(0, 80) }).then(() => {}, () => {});
     });
   }
   next();
@@ -192,7 +192,10 @@ app.post('/api/loans/:id/return', auth('admin'), h(async (req, res) => {
   const [l] = await q(db.from('history').select('*').eq('id', req.params.id));
   if (!l || l.return_date) return res.status(404).json({ error: 'Loan not found.' });
   const fine = lateDays(l.due_date) * FINE_PER_DAY;
-  await q(db.from('history').update({ return_date: today(), fine_amount: fine, fine_paid: fine === 0 || !!req.body.finePaid, condition: req.body.condition || 'Good', condition_note: String(req.body.note || '').slice(0, 200) }).eq('id', l.id));
+  const act = req.body.fineAction || (req.body.finePaid ? 'collected' : 'unpaid');
+  const waived = act === 'waive_all' ? fine : act === 'waive_part' ? Math.min(fine, Math.max(0, Math.round(+req.body.waiveAmount) || 0)) : 0;
+  const received = act === 'collected' ? fine - waived : 0;
+  await q(db.from('history').update({ return_date: today(), fine_amount: fine, fine_waived: waived, fine_received: received, fine_paid: fine - waived - received <= 0, fine_note: String(req.body.fineNote || '').slice(0, 200), condition: req.body.condition || 'Good', condition_note: String(req.body.note || '').slice(0, 200) }).eq('id', l.id));
   await sync(l.book_id);
   res.json({ ok: true });
 }));
@@ -303,11 +306,28 @@ app.post('/api/loans/:id/renew', auth(), h(async (req, res) => {
   res.json({ ok: true, due_date: due });
 }));
 
+// part payment or waiver of a fine on a returned book
+app.post('/api/loans/:id/fine', auth('admin'), h(async (req, res) => {
+  const [l] = await q(db.from('history').select('*').eq('id', req.params.id));
+  if (!l || !l.return_date) return res.status(400).json({ error: 'Return the book first. You can waive the fine while returning it.' });
+  const out = Math.max(0, (l.fine_amount || 0) - (l.fine_waived || 0) - (l.fine_received || 0));
+  const amt = Math.min(out, Math.max(0, Math.round(+req.body.amount) || 0));
+  if (!amt) return res.status(400).json({ error: 'Enter an amount (not more than the fine left).' });
+  const upd = req.body.kind === 'waive' ? { fine_waived: (l.fine_waived || 0) + amt } : { fine_received: (l.fine_received || 0) + amt };
+  upd.fine_paid = out - amt <= 0; upd.fine_note = String(req.body.note || '').slice(0, 200);
+  await q(db.from('history').update(upd).eq('id', l.id));
+  res.json({ ok: true, left: out - amt });
+}));
+
 app.get('/api/fines/unpaid', auth('admin'), h(async (_req, res) =>
   res.json(await q(db.from('history').select('*').gt('fine_amount', 0).eq('fine_paid', false).order('id', { ascending: false })))));
 
 app.post('/api/loans/:id/paid', auth('admin'), h(async (req, res) => {
-  await q(db.from('history').update({ fine_paid: true }).eq('id', req.params.id));
+  const [l] = await q(db.from('history').select('*').eq('id', req.params.id));
+  if (l) {
+    const out = Math.max(0, (l.fine_amount || 0) - (l.fine_waived || 0) - (l.fine_received || 0));
+    await q(db.from('history').update({ fine_received: (l.fine_received || 0) + out, fine_paid: true }).eq('id', l.id));
+  }
   res.json({ ok: true });
 }));
 
@@ -368,11 +388,11 @@ app.post('/api/books/:id/scan', auth('admin'), h(async (req, res) => {
 }));
 
 app.get('/api/reports', auth('admin'), h(async (_req, res) => {
-  const rows = await fetchAll(() => db.from('history').select('book_title,borrower_name,borrower_id,issue_date,fine_amount,fine_paid').order('id'));
+  const rows = await fetchAll(() => db.from('history').select('book_title,borrower_name,borrower_id,issue_date,fine_amount,fine_paid,fine_received,fine_waived').order('id'));
   const top = key => { const m = {}; rows.forEach(r => { const k = key(r); if (k) m[k] = (m[k] || 0) + 1; }); return Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([name, count]) => ({ name, count })); };
   const months = {}; rows.forEach(r => { const k = (r.issue_date || '').slice(0, 7); if (k) months[k] = (months[k] || 0) + 1; });
   res.json({
-    loans: rows.length, collected: rows.filter(r => r.fine_paid).reduce((a, r) => a + (r.fine_amount || 0), 0),
+    loans: rows.length, collected: rows.reduce((a, r) => a + (r.fine_received || 0), 0), waived: rows.reduce((a, r) => a + (r.fine_waived || 0), 0),
     topBooks: top(r => r.book_title), topReaders: top(r => r.borrower_name ? `${r.borrower_name} (${r.borrower_id})` : ''),
     monthly: Object.entries(months).sort().slice(-12).map(([name, count]) => ({ name, count }))
   });
@@ -661,7 +681,7 @@ app.post('/api/parent', h(async (req, res) => {
   res.json({
     name: m.name, class_name: m.class_name || '',
     open: loans.filter(l => !l.return_date).map(l => ({ title: l.book_title, due_date: l.due_date, late: lateDays(l.due_date), fine: lateDays(l.due_date) * FINE_PER_DAY })),
-    unpaid: loans.filter(l => l.fine_amount > 0 && !l.fine_paid).reduce((a, l) => a + l.fine_amount, 0),
+    unpaid: loans.filter(l => l.fine_amount > 0 && !l.fine_paid).reduce((a, l) => a + Math.max(0, l.fine_amount - (l.fine_waived || 0) - (l.fine_received || 0)), 0),
     recent: loans.filter(l => l.return_date).slice(0, 5).map(l => ({ title: l.book_title, return_date: l.return_date }))
   });
 }));
