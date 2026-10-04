@@ -596,7 +596,9 @@ app.get('/api/cron/daily', h(async (req, res) => {
   if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) return res.status(401).json({ error: 'Not allowed.' });
   const out = {};
   try { out.reminders = await sendReminders(false); } catch (e) { out.reminderError = e.message; }
-  if (new Date().getUTCDay() === 1) { try { await emailBackup(); out.backup = 'sent'; } catch (e) { out.backupError = e.message; } }
+  if (new Date().getUTCDay() === 1) { try { await emailBackup(); out.backup = 'sent'; } catch (e) { out.backupError = e.message; }
+    try { await emailSummary(); out.summary = 'sent'; } catch (e) { out.summaryError = e.message; }
+  }
   res.json(out);
 }));
 
@@ -740,6 +742,111 @@ app.delete('/api/reading-lists/:id', auth(), h(async (req, res) => {
   await q(db.from('reading_lists').delete().eq('id', l.id));
   res.json({ ok: true });
 }));
+
+// ---- restore from a backup file ----
+const BOOK_COLS = ['barcode', 'title', 'author', 'category', 'ledger_info', 'quantity', 'pdf_url', 'rating', 'lost_count', 'isbn', 'shelf', 'donated_by'];
+const MEM_COLS = ['id', 'name', 'email', 'phone', 'role', 'status', 'class_name'];
+const LOAN_COLS = ['book_title', 'borrower_name', 'borrower_id', 'issue_date', 'return_date', 'due_date', 'renewals', 'fine_amount', 'fine_paid', 'fine_received', 'fine_waived', 'fine_note', 'condition', 'condition_note'];
+const pick = (o, keys) => { const r = {}; keys.forEach(k => { if (o[k] !== undefined && o[k] !== null) r[k] = (o[k] === '' && /date$/.test(k)) ? null : o[k]; }); return r; };
+app.post('/api/restore/books', auth('admin'), h(async (req, res) => {
+  const rows = (req.body.rows || []).slice(0, 300);
+  const have = await fetchAll(() => db.from('books').select('barcode,title,ledger_info').order('id'));
+  const bar = new Set(have.map(b => b.barcode).filter(Boolean)), key = new Set(have.map(b => b.title + '|' + (b.ledger_info || '')));
+  const add = rows.filter(r => r.title && (r.barcode ? !bar.has(r.barcode) : !key.has(r.title + '|' + (r.ledger_info || '')))).map(r => ({ ...pick(r, BOOK_COLS), borrowed_count: 0, status: 'Available' }));
+  if (add.length) await q(db.from('books').insert(add));
+  res.json({ added: add.length });
+}));
+app.post('/api/restore/members', auth('admin'), h(async (req, res) => {
+  const add = (req.body.rows || []).slice(0, 300).filter(r => r.id && r.name).map(r => pick({ ...r, id: String(r.id) }, MEM_COLS));
+  if (add.length) await q(db.from('members').upsert(add, { onConflict: 'id', ignoreDuplicates: true }));
+  res.json({ added: add.length });
+}));
+app.post('/api/restore/loans', auth('admin'), h(async (req, res) => {
+  const rows = (req.body.rows || []).slice(0, 500);
+  const bks = await fetchAll(() => db.from('books').select('id,barcode,title,ledger_info').order('id'));
+  const byBar = {}, byKey = {}; bks.forEach(b => { if (b.barcode) byBar[b.barcode] = b; byKey[b.title + '|' + (b.ledger_info || '')] = b; });
+  const hist = await fetchAll(() => db.from('history').select('book_id,borrower_id,issue_date').order('id'));
+  const seen = new Set(hist.map(x => `${x.book_id}|${x.borrower_id}|${x.issue_date}`)), add = [];
+  rows.forEach(r => {
+    const b = (r.book_barcode && byBar[r.book_barcode]) || byKey[(r.book_title || '') + '|' + (r.book_ledger || '')];
+    if (!b) return;
+    const k = `${b.id}|${r.borrower_id}|${r.issue_date}`; if (seen.has(k)) return; seen.add(k);
+    add.push({ ...pick(r, LOAN_COLS), book_id: b.id });
+  });
+  if (add.length) await q(db.from('history').insert(add));
+  res.json({ added: add.length });
+}));
+app.post('/api/restore/recount', auth('admin'), h(async (_req, res) => {
+  const bks = await fetchAll(() => db.from('books').select('id,quantity,lost_count,borrowed_count').order('id'));
+  const open = await fetchAll(() => db.from('history').select('book_id').is('return_date', null).order('id'));
+  const c = {}; open.forEach(o => { if (o.book_id) c[o.book_id] = (c[o.book_id] || 0) + 1; });
+  const fix = bks.filter(b => (b.borrowed_count || 0) !== (c[b.id] || 0));
+  for (let i = 0; i < fix.length; i += 20) await Promise.all(fix.slice(i, i + 20).map(b => { const n = c[b.id] || 0; return q(db.from('books').update({ borrowed_count: n, status: n + (b.lost_count || 0) >= (b.quantity || 1) ? 'Borrowed' : 'Available' }).eq('id', b.id)); }));
+  res.json({ fixed: fix.length });
+}));
+
+// ---- class competition, never borrowed, sign-ups, weekly summary ----
+app.get('/api/class-board', auth(), h(async (req, res) => {
+  const year = new Date().getFullYear();
+  const [mem, rows] = await Promise.all([
+    fetchAll(() => db.from('members').select('id,class_name').order('id')),
+    fetchAll(() => db.from('history').select('borrower_id').gte('issue_date', year + '-01-01').order('id'))
+  ]);
+  const cls = {}, size = {};
+  mem.forEach(m => { if (m.class_name) { cls[m.id.toLowerCase()] = m.class_name; size[m.class_name] = (size[m.class_name] || 0) + 1; } });
+  const tot = {}; rows.forEach(r => { const c = cls[String(r.borrower_id || '').toLowerCase()]; if (c) tot[c] = (tot[c] || 0) + 1; });
+  const mine = req.user.id ? ((mem.find(m => m.id === req.user.id) || {}).class_name || '') : '';
+  res.json({ mine, board: Object.entries(tot).map(([name, count]) => ({ name, count, members: size[name] })).sort((a, b) => b.count - a.count).slice(0, 10) });
+}));
+
+app.get('/api/never', auth('admin'), h(async (_req, res) => {
+  const [bks, hist] = await Promise.all([
+    fetchAll(() => db.from('books').select('id,title,author,category,ledger_info,shelf').order('id')),
+    fetchAll(() => db.from('history').select('book_id').order('id'))
+  ]);
+  const used = new Set(hist.map(x => x.book_id));
+  res.json(bks.filter(b => !used.has(b.id)));
+}));
+
+app.post('/api/signup', h(async (req, res) => {
+  const ip = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim().slice(0, 45) || '?', who = 'signup:' + ip;
+  const { count } = await db.from('login_attempts').select('*', { count: 'exact', head: true }).eq('who', who).gt('at', new Date(Date.now() - 3600000).toISOString());
+  if ((count || 0) >= 5) return res.status(429).json({ error: 'Too many requests. Please try again later.' });
+  const name = String(req.body.name || '').trim().slice(0, 80);
+  if (!name) return res.status(400).json({ error: 'Please enter your name.' });
+  await q(db.from('signups').insert({ name, class_name: String(req.body.class_name || '').slice(0, 20), phone: String(req.body.phone || '').slice(0, 20), email: String(req.body.email || '').slice(0, 80) }));
+  await db.from('login_attempts').insert({ who });
+  res.status(201).json({ ok: true });
+}));
+app.get('/api/signups', auth('admin'), h(async (_req, res) => res.json(await q(db.from('signups').select('*').eq('status', 'Pending').order('id')))));
+app.post('/api/signups/:id/approve', auth('admin'), h(async (req, res) => {
+  const [r] = await q(db.from('signups').select('*').eq('id', req.params.id));
+  const id = String(req.body.id || '').trim();
+  if (!r) return res.status(404).json({ error: 'Request not found.' });
+  if (!id) return res.status(400).json({ error: 'Enter a Member ID.' });
+  if ((await q(db.from('members').select('id').ilike('id', id.replace(/[%_]/g, '')))).length) return res.status(400).json({ error: 'That Member ID is already used.' });
+  await q(db.from('members').insert({ id, name: r.name, email: r.email || '', phone: r.phone || '', class_name: r.class_name || '', role: 'Student' }));
+  await q(db.from('signups').update({ status: 'Approved' }).eq('id', r.id));
+  res.json({ ok: true });
+}));
+app.delete('/api/signups/:id', auth('admin'), h(async (req, res) => {
+  await q(db.from('signups').update({ status: 'Rejected' }).eq('id', req.params.id));
+  res.json({ ok: true });
+}));
+
+async function emailSummary() {
+  const mail = mailer(), to = process.env.SUMMARY_EMAIL || process.env.ADMIN_EMAIL;
+  if (!mail || !to) throw new Error('Add GMAIL_USER, GMAIL_APP_PASSWORD and ADMIN_EMAIL (or SUMMARY_EMAIL) in Vercel settings.');
+  const since = addDays(-7);
+  const hist = await fetchAll(() => db.from('history').select('book_title,borrower_name,borrower_id,issue_date,return_date,due_date').order('id'));
+  const issued = hist.filter(x => x.issue_date >= since), returned = hist.filter(x => x.return_date && x.return_date >= since);
+  const overdue = hist.filter(x => !x.return_date && x.due_date && x.due_date < today());
+  const fines = overdue.reduce((a, x) => a + lateDays(x.due_date) * FINE_PER_DAY, 0);
+  const top = (a, key) => { const m = {}; a.forEach(x => m[key(x)] = (m[key(x)] || 0) + 1); return Object.entries(m).sort((p, r) => r[1] - p[1]).slice(0, 5).map(([n, c]) => `  - ${n} (${c})`).join('\n') || '  -'; };
+  const text = `வாராந்திர நூலக சுருக்கம் / Weekly library summary\nKilinochchi Central College Library\n${since} to ${today()}\n\nBooks issued: ${issued.length}\nBooks returned: ${returned.length}\nOverdue now: ${overdue.length} books (fines so far about Rs. ${fines})\n\nMost borrowed this week:\n${top(issued, x => x.book_title)}\n\nMost active readers this week:\n${top(issued, x => `${x.borrower_name} (${x.borrower_id})`)}\n`;
+  await mail.sendMail({ from: from(), to, subject: 'KCC Library weekly summary ' + today(), text });
+}
+app.post('/api/summary/email', auth('admin'), h(async (_req, res) => { await emailSummary(); res.json({ ok: true }); }));
 
 // ---- dashboard numbers ----
 app.get('/api/stats', auth('admin'), h(async (_req, res) => {
