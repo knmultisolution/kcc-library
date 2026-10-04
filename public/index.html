@@ -71,6 +71,7 @@ footer b{color:#fff}
 .pub{color:var(--mute);margin:-6px 0 8px;font-size:15px}.pub b{color:var(--ink)}
 @media print{header.bar,.hero,footer,.tabs,.btn,.nb,#toast{display:none!important}main{padding:0}.panel{border:0;padding:0}}
 #printArea{display:none}
+#offBar{background:#fff3cd;color:#5c4400;padding:8px 20px;text-align:center;font-size:14px}#offBar .btn{margin-left:8px;padding:3px 10px;color:#000;background:#fff}
 [data-theme=dark]{--ink:#e8eaed;--paper:#1f2428;--wash:#14181b;--line:#363e46;--mute:#9aa4ae;--ok:#4cc38a;--warn:#ff7a6b}
 [data-theme=dark] .btn,[data-theme=dark] label input,[data-theme=dark] label select,[data-theme=dark] .stat,[data-theme=dark] .tab{background:var(--paper);color:var(--ink)}
 [data-theme=dark] .btn.p{background:var(--gate);color:#fff}[data-theme=dark] .btn.d{color:var(--warn)}
@@ -121,6 +122,7 @@ footer b{color:#fff}
     <button class="nb cta" id="authBtn">Sign in</button>
   </nav>
 </div></header>
+<div id="offBar" hidden></div>
 
 <section class="hero"><div class="in">
   <h1>Find your next book at KCC</h1>
@@ -330,7 +332,7 @@ footer b{color:#fff}
   <form method="dialog" id="askForm">
     <h3 id="askTitle">Issue book</h3><p id="askText"></p>
     <label>Member ID<input id="askInput" required></label>
-    <div class="acts"><button type="button" class="btn" id="askCancel">Cancel</button><button class="btn p">Issue book</button></div>
+    <div class="acts"><button type="button" class="btn" id="askCancel">Cancel</button><button class="btn p" id="askOk">Issue book</button></div>
   </form>
 </dialog>
 
@@ -371,14 +373,25 @@ function toast(msg, err) {
   const t = $('#toast'); t.textContent = msg; t.className = err ? 'err' : ''; t.style.display = 'block';
   clearTimeout(toast.t); toast.t = setTimeout(() => t.style.display = 'none', 3200);
 }
+const CACHED = ['/api/books', '/api/members', '/api/loans/open', '/api/papers', '/api/announcements', '/api/ratings', '/api/popular', '/api/featured', '/api/wishlist'];
 async function api(url, method = 'GET', body) {
-  const r = await fetch(url, {
-    method, headers: { 'Content-Type': 'application/json', ...(me ? { Authorization: 'Bearer ' + me.token } : {}) },
-    body: body ? JSON.stringify(body) : undefined
-  });
+  let r;
+  try {
+    r = await fetch(url, {
+      method, headers: { 'Content-Type': 'application/json', ...(me ? { Authorization: 'Bearer ' + me.token } : {}) },
+      body: body ? JSON.stringify(body) : undefined
+    });
+  } catch (e) {
+    setOffline(true);
+    const c = method === 'GET' && CACHED.includes(url) && localStorage.getItem('kcc:' + url);
+    if (c) return JSON.parse(c);
+    const err = new Error('You are offline. This needs the internet.'); err.offline = true; throw err;
+  }
+  if (offline) setOffline(false);
   const data = await r.json().catch(() => ({}));
   if (r.status === 401 && me) { signOut(); toast('Your session ended. Please sign in again.', true); }
-  if (!r.ok) throw new Error(data.error || 'Something went wrong.');
+  if (!r.ok) { const err = new Error(data.error || 'Something went wrong.'); err.status = r.status; throw err; }
+  if (method === 'GET' && CACHED.includes(url)) cachePut(url, data);
   return data;
 }
 const run = async (fn, ok) => { try { await fn(); if (ok) toast(ok); } catch (e) { toast(e.message, true); } };
@@ -402,9 +415,9 @@ function refreshChrome() {
   $('#navAdmin').hidden = !(me && (me.role === 'admin' || me.role === 'viewer'));
   $('#navReaders').hidden = !(me && me.memberId);
   if (!me || (!['admin', 'viewer'].includes(me.role) && !$('#v-admin').hidden)) show('catalog');
-  renderBooks(); loadExtras();
+  renderBooks(); loadExtras(); if (me && me.role === 'admin' && !offline) prefetchOffline();
 }
-function signOut() { me = null; localStorage.removeItem('kccUser'); refreshChrome(); }
+function signOut() { me = null; localStorage.removeItem('kccUser'); ['/api/members', '/api/loans/open', '/api/wishlist'].forEach(u => localStorage.removeItem('kcc:' + u)); refreshChrome(); }
 $('#authBtn').onclick = () => me ? signOut() : $('#loginDlg').showModal();
 $('#loginCancel').onclick = () => $('#loginDlg').close();
 $('#loginForm').onsubmit = e => run(async () => {
@@ -528,8 +541,9 @@ function renderBooks() {
 }
 $('#q').oninput = $('#cat').onchange = $('#avail').onchange = $('#lang2').onchange = renderBooks;
 
-function askMember(book) {
+function askMember(book, label = 'Issue book') {
   return new Promise(res => {
+    $('#askTitle').textContent = label; $('#askOk').textContent = label;
     $('#askText').textContent = book.title; $('#askInput').value = '';
     const d = $('#askDlg'); d.showModal();
     $('#askCancel').onclick = () => { d.close(); res(null); };
@@ -627,10 +641,17 @@ const actions = {
   issue: id => run(async () => {
     const b = books.find(x => x.id == id), borrowerId = await askMember(b);
     if (!borrowerId) return;
-    await api(`/api/books/${id}/issue`, 'POST', { borrowerId }); await loadBooks();
-  }, 'Book issued.'),
+    try {
+      if (offline) throw Object.assign(new Error('offline'), { offline: true });
+      await api(`/api/books/${id}/issue`, 'POST', { borrowerId }); await loadBooks(); toast('Book issued.');
+    } catch (e) {
+      if (!e.offline) throw e;
+      queueScan(id, borrowerId, 'issue'); toast('Saved offline. It will sync when the internet returns.');
+    }
+  }),
   returnBook: id => run(async () => {
-    curLoans = await api(`/api/books/${id}/loans`);
+    if (offline) return offlineReturn(books.find(x => x.id == id));
+    try { curLoans = await api(`/api/books/${id}/loans`); } catch (e) { if (e.offline) return offlineReturn(books.find(x => x.id == id)); throw e; }
     if (!curLoans.length) loadBooks();
     $('#loanTitle').textContent = books.find(x => x.id == id).title;
     $('#loanList').innerHTML = curLoans.map(l => {
@@ -760,6 +781,77 @@ Object.assign(actions, {
   mailNow: () => confirm('Send an email to every overdue member who has an email address?') && run(async () => { const r = await api('/api/reminders/send', 'POST'); toast(`${r.sent} email(s) sent.`); }),
   mailBackup: () => run(async () => { await api('/api/backup/email', 'POST'); }, 'Backup emailed to the admin address.')
 });
+
+// ---- offline mode: browse offline, issue and return offline, sync later ----
+let offline = !navigator.onLine, syncing = false;
+const getQ = () => JSON.parse(localStorage.getItem('kccQueue') || '[]');
+const getFailed = () => JSON.parse(localStorage.getItem('kccFailed') || '[]');
+const setQ = a => { localStorage.setItem('kccQueue', JSON.stringify(a)); showOffline(); };
+const cacheGet = u => JSON.parse(localStorage.getItem('kcc:' + u) || '[]');
+function cachePut(u, d) { try { localStorage.setItem('kcc:' + u, JSON.stringify(d)); } catch (e) { /* storage full */ } }
+function showOffline() {
+  const n = getQ().length, f = getFailed().length, bar = $('#offBar');
+  bar.hidden = !(offline || n || f);
+  bar.innerHTML = (offline ? '<b>You are offline.</b> You can still search books, issue and return. ' : '') + (n ? `${n} change(s) waiting to sync. ` : '') + (f ? `<b>${f} change(s) could not be saved.</b> <button class="btn" data-act="showFailed">See</button> ` : '') + (n && !offline ? '<button class="btn" data-act="syncNow">Sync now</button>' : '');
+}
+function setOffline(v) { if (offline === v) return; offline = v; showOffline(); if (!v && getQ().length && me) syncQueue(); }
+async function prefetchOffline() { try { await api('/api/members'); await api('/api/loans/open'); } catch (e) { /* optional */ } }
+function queueScan(bookId, mid, mode) {
+  const b = books.find(x => x.id == bookId), mem = cacheGet('/api/members');
+  const m = mem.find(x => x.id.toLowerCase() === String(mid).toLowerCase());
+  if (mem.length && !m) throw new Error('No member found with that ID.');
+  const id = m ? m.id : mid, open = cacheGet('/api/loans/open');
+  const i = open.findIndex(l => l.book_id == bookId && String(l.borrower_id).toLowerCase() === id.toLowerCase());
+  let action;
+  if (i >= 0 && mode === 'issue') throw new Error('This member already has this book.');
+  if (i >= 0) { open.splice(i, 1); b.borrowed_count = Math.max(0, (b.borrowed_count || 0) - 1); action = 'returned'; }
+  else if (mode === 'return') throw new Error('This member does not have this book.');
+  else {
+    if (left(b) <= 0) throw new Error('No copy of this book is available.');
+    open.push({ book_id: b.id, book_title: b.title, borrower_id: id }); b.borrowed_count = (b.borrowed_count || 0) + 1; action = 'issued';
+  }
+  cachePut('/api/loans/open', open); cachePut('/api/books', books);
+  setQ([...getQ(), { bookId, borrowerId: id, mode, title: b.title, date: new Date().toLocaleDateString('en-CA') }]);
+  renderBooks();
+  return { action, name: m ? m.name : id, offline: true };
+}
+async function scanOrQueue(bookId, mid) {
+  if (!offline) { try { return await api(`/api/books/${bookId}/scan`, 'POST', { borrowerId: mid }); } catch (e) { if (!e.offline) throw e; } }
+  return queueScan(bookId, mid);
+}
+async function offlineReturn(b) {
+  const mid = await askMember(b, 'Return book'); if (!mid) return;
+  queueScan(b.id, mid, 'return'); toast('Saved offline. It will sync when the internet returns.');
+}
+async function syncQueue() {
+  if (syncing || offline) return;
+  syncing = true; let done = 0;
+  try {
+    let q = getQ();
+    while (q.length) {
+      const it = q[0];
+      try { await api(`/api/books/${it.bookId}/scan`, 'POST', { borrowerId: it.borrowerId, date: it.date, mode: it.mode }); done++; }
+      catch (e) {
+        if (e.offline || e.status === 401) break;
+        localStorage.setItem('kccFailed', JSON.stringify([...getFailed(), { ...it, error: e.message }]));
+      }
+      q = q.slice(1); setQ(q);
+    }
+  } finally { syncing = false; }
+  showOffline();
+  if (done) { toast(`${done} offline change(s) synced.`); await loadBooks(); prefetchOffline(); }
+}
+Object.assign(actions, {
+  syncNow: () => syncQueue(),
+  showFailed: () => {
+    alert('These offline changes could not be saved:\n\n' + getFailed().map(x => `${x.title || x.bookId} - ${x.borrowerId}: ${x.error}`).join('\n'));
+    if (confirm('Clear this list?')) { localStorage.removeItem('kccFailed'); showOffline(); }
+  }
+});
+window.addEventListener('online', () => setOffline(false));
+window.addEventListener('offline', () => setOffline(true));
+showOffline();
+if (!offline && me && getQ().length) syncQueue();
 
 // ---- parent view, holidays, book of the week, dark mode ----
 $('#parentForm').onsubmit = e => {
@@ -951,8 +1043,8 @@ $('#scMem').onkeydown = e => {
   run(async () => {
     if (!scanBook) throw new Error('Scan a book first.');
     const mid = e.target.value.trim(); if (!mid) throw new Error('Enter the Member ID.');
-    const r = await api(`/api/books/${scanBook.id}/scan`, 'POST', { borrowerId: mid });
-    $('#scInfo').innerHTML = r.action === 'issued' ? `<span class="chip a">Issued to ${esc(r.name)}, due ${esc(r.due)}</span>` : `<span class="chip a">Returned by ${esc(r.name)}${r.fine ? `. Late fine Rs. ${r.fine} (see Overdue tab)` : ''}</span>`;
+    const r = await scanOrQueue(scanBook.id, mid);
+    $('#scInfo').innerHTML = r.action === 'issued' ? `<span class="chip a">Issued to ${esc(r.name)}${r.due ? ', due ' + esc(r.due) : ' (saved offline)'}</span>` : `<span class="chip a">Returned by ${esc(r.name)}${r.offline ? ' (saved offline)' : ''}${r.fine ? `. Late fine Rs. ${r.fine} (see Overdue tab)` : ''}</span>`;
     $('#scBook').value = $('#scMem').value = ''; scanBook = null; await loadBooks(); $('#scBook').focus();
   });
 };
