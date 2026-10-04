@@ -88,6 +88,8 @@ const openCount = async id => {
   if (error) throw new Error(error.message);
   return count || 0;
 };
+const lateOn = (d, on) => d ? Math.max(0, Math.ceil((new Date(on) - new Date(d)) / 864e5)) : 0;
+const addDaysFrom = (day, n) => new Date(new Date(day + 'T00:00:00Z').getTime() + n * 864e5).toISOString().slice(0, 10);
 const lateDays = d => d ? Math.max(0, Math.ceil((new Date(today()) - new Date(d)) / 864e5)) : 0;
 let HOLIDAYS = new Set();
 // next working day: skips Saturday, Sunday and the holidays set by the librarian
@@ -342,18 +344,23 @@ app.post('/api/books/:id/scan', auth('admin'), h(async (req, res) => {
   if (!book) return res.status(404).json({ error: 'Book not found.' });
   const [m] = await q(db.from('members').select('*').ilike('id', req.body.borrowerId || ''));
   if (!m) return res.status(400).json({ error: 'No member found with that ID.' });
+  // offline changes arrive later, with the day they were really made (up to 30 days back)
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(req.body.date || '') && req.body.date <= today() && req.body.date >= addDays(-30) ? req.body.date : today();
+  const mode = req.body.mode;
   const [loan] = await q(db.from('history').select('*').eq('book_id', book.id).eq('borrower_id', m.id).is('return_date', null));
   if (loan) {
-    const fine = lateDays(loan.due_date) * FINE_PER_DAY;
-    await q(db.from('history').update({ return_date: today(), fine_amount: fine, fine_paid: fine === 0 }).eq('id', loan.id));
+    if (mode === 'issue') return res.status(400).json({ error: `${m.name} already has this book.` });
+    const fine = lateOn(loan.due_date, day) * FINE_PER_DAY;
+    await q(db.from('history').update({ return_date: day, fine_amount: fine, fine_paid: fine === 0 }).eq('id', loan.id));
     await sync(book.id);
     return res.json({ action: 'returned', name: m.name, fine });
   }
+  if (mode === 'return') return res.status(400).json({ error: `${m.name} does not have this book.` });
   if ((book.borrowed_count || 0) + (book.lost_count || 0) >= (book.quantity || 1)) return res.status(400).json({ error: 'No copy of this book is available.' });
   const lim = limFor(m);
   if (await openCount(m.id) >= lim.max) return res.status(400).json({ error: `${m.name} already has ${lim.max} books (the limit for a ${m.role}).` });
-  const due = workday(addDays(lim.days));
-  await q(db.from('history').insert({ book_id: book.id, book_title: book.title, borrower_name: m.name, borrower_id: m.id, issue_date: today(), due_date: due }));
+  const due = workday(addDaysFrom(day, lim.days));
+  await q(db.from('history').insert({ book_id: book.id, book_title: book.title, borrower_name: m.name, borrower_id: m.id, issue_date: day, due_date: due }));
   await db.from('reservations').update({ status: 'Fulfilled' }).eq('book_id', book.id).eq('member_id', m.id).eq('status', 'Waiting');
   await sync(book.id);
   res.json({ action: 'issued', name: m.name, due });
@@ -669,6 +676,10 @@ app.put('/api/featured', auth('admin'), h(async (req, res) => {
   else await q(db.from('settings').upsert([{ key: 'featured_book', value: String(id) }, { key: 'featured_note', value: String(req.body.note || '').slice(0, 200) }], { onConflict: 'key' }));
   res.json({ ok: true });
 }));
+
+// all open loans, kept in the browser for offline use
+app.get('/api/loans/open', auth('admin'), h(async (_req, res) =>
+  res.json(await fetchAll(() => db.from('history').select('id,book_id,book_title,borrower_id,due_date').is('return_date', null).order('id')))));
 
 // ---- dashboard numbers ----
 app.get('/api/stats', auth('admin'), h(async (_req, res) => {
