@@ -117,7 +117,7 @@ app.post('/api/login', h(async (req, res) => {
   const members = await q(db.from('members').select('*').or(`id.ilike.${username.replace(/[,()]/g, '')},name.ilike.${username.replace(/[,()]/g, '')}`));
   const m = members.find(x => x.status === 'Active' && (x.pw_hash ? checkPw(password, x.pw_hash) : x.id.toLowerCase() === password.toLowerCase()));
   if (!m) { await db.from('login_attempts').insert({ who }); return res.status(401).json({ error: 'Name or member ID or password is incorrect.' }); }
-  return ok(token(m.name, m.role === 'Librarian' ? 'admin' : m.role === 'Viewer' ? 'viewer' : 'user', m.id));
+  return ok({ ...token(m.name, m.role === 'Librarian' ? 'admin' : m.role === 'Viewer' ? 'viewer' : 'user', m.id), memberRole: m.role });
 }));
 
 
@@ -125,11 +125,11 @@ app.post('/api/login', h(async (req, res) => {
 app.get('/api/books', h(async (_req, res) => res.json(await fetchAll(() => db.from('books').select('*').order('id')))));
 
 app.post('/api/books', auth('admin'), h(async (req, res) => {
-  const { title, author, category, ledger_info, quantity, pdf_url, barcode } = req.body;
+  const { title, author, category, ledger_info, quantity, pdf_url, barcode, shelf, donated_by } = req.body;
   if (!title || !author || !category) return res.status(400).json({ error: 'Title, author and category are required.' });
   const rows = await q(db.from('books').insert({
     title, author, category, ledger_info: ledger_info || 'N/A', quantity: parseInt(quantity) || 1,
-    pdf_url: pdf_url || '', barcode: barcode || 'KCC-' + Math.floor(100000 + Math.random() * 900000)
+    pdf_url: pdf_url || '', shelf: shelf || '', donated_by: donated_by || '', barcode: barcode || 'KCC-' + Math.floor(100000 + Math.random() * 900000)
   }).select());
   res.status(201).json(rows[0]);
 }));
@@ -142,6 +142,7 @@ app.post('/api/books/bulk', auth('admin'), h(async (req, res) => {
     category: String(b.category || 'General').trim(),
     ledger_info: String(b.ledger_info || 'N/A').trim(),
     quantity: parseInt(b.quantity) || 1,
+    shelf: String(b.shelf || '').trim(), donated_by: String(b.donated_by || '').trim(),
     barcode: 'KCC-' + Math.floor(100000 + Math.random() * 900000)
   }));
   if (!rows.length) return res.status(400).json({ error: 'No valid rows found.' });
@@ -191,7 +192,7 @@ app.post('/api/loans/:id/return', auth('admin'), h(async (req, res) => {
   const [l] = await q(db.from('history').select('*').eq('id', req.params.id));
   if (!l || l.return_date) return res.status(404).json({ error: 'Loan not found.' });
   const fine = lateDays(l.due_date) * FINE_PER_DAY;
-  await q(db.from('history').update({ return_date: today(), fine_amount: fine, fine_paid: fine === 0 || !!req.body.finePaid }).eq('id', l.id));
+  await q(db.from('history').update({ return_date: today(), fine_amount: fine, fine_paid: fine === 0 || !!req.body.finePaid, condition: req.body.condition || 'Good', condition_note: String(req.body.note || '').slice(0, 200) }).eq('id', l.id));
   await sync(l.book_id);
   res.json({ ok: true });
 }));
@@ -240,10 +241,10 @@ app.delete('/api/requests/:id', auth('admin'), h(async (req, res) => {
 
 // ---- edit books / members, change password ----
 app.put('/api/books/:id', auth('admin'), h(async (req, res) => {
-  const { title, author, category, ledger_info, quantity, pdf_url, lost_count, isbn } = req.body;
+  const { title, author, category, ledger_info, quantity, pdf_url, lost_count, isbn, shelf, donated_by } = req.body;
   if (!title) return res.status(400).json({ error: 'Title is required.' });
   const qty = Math.max(1, parseInt(quantity) || 1);
-  await q(db.from('books').update({ title, author: author || 'N/A', category: category || 'General', ledger_info: ledger_info || 'N/A', quantity: qty, lost_count: Math.min(qty, Math.max(0, parseInt(lost_count) || 0)), pdf_url: pdf_url || '', isbn: String(isbn || '').replace(/[^0-9Xx]/g, '') }).eq('id', req.params.id));
+  await q(db.from('books').update({ title, author: author || 'N/A', category: category || 'General', ledger_info: ledger_info || 'N/A', quantity: qty, lost_count: Math.min(qty, Math.max(0, parseInt(lost_count) || 0)), pdf_url: pdf_url || '', isbn: String(isbn || '').replace(/[^0-9Xx]/g, ''), shelf: shelf || '', donated_by: donated_by || '' }).eq('id', req.params.id));
   await sync(req.params.id);
   res.json({ ok: true });
 }));
@@ -680,6 +681,45 @@ app.put('/api/featured', auth('admin'), h(async (req, res) => {
 // all open loans, kept in the browser for offline use
 app.get('/api/loans/open', auth('admin'), h(async (_req, res) =>
   res.json(await fetchAll(() => db.from('history').select('id,book_id,book_title,borrower_id,due_date').is('return_date', null).order('id')))));
+
+// ---- class promotion and reading lists ----
+app.post('/api/members/promote', auth('admin'), h(async (req, res) => {
+  const map = {}; (req.body.moves || []).forEach(m => { if (m.from && m.to) map[String(m.from)] = String(m.to).trim(); });
+  const mem = await fetchAll(() => db.from('members').select('id,class_name,status').order('id'));
+  const groups = {}, left = [];
+  mem.forEach(m => {
+    const to = map[m.class_name];
+    if (!to || m.status === 'Inactive') return;
+    if (to === '-') left.push(m.id); else (groups[to] = groups[to] || []).push(m.id);
+  });
+  let moved = 0;
+  for (const [cls, ids] of Object.entries(groups)) for (let i = 0; i < ids.length; i += 200) { await q(db.from('members').update({ class_name: cls }).in('id', ids.slice(i, i + 200))); moved += Math.min(200, ids.length - i); }
+  for (let i = 0; i < left.length; i += 200) await q(db.from('members').update({ status: 'Inactive' }).in('id', left.slice(i, i + 200)));
+  res.json({ moved, left: left.length });
+}));
+
+const isTeacher = async u => u.role === 'admin' || !!(u.id && ((await q(db.from('members').select('role').eq('id', u.id)))[0] || {}).role === 'Teacher');
+app.get('/api/reading-lists', auth(), h(async (req, res) => {
+  const lists = await q(db.from('reading_lists').select('*').order('id', { ascending: false }).limit(100));
+  if (req.user.role === 'viewer' || await isTeacher(req.user)) return res.json(lists);
+  const [m] = req.user.id ? await q(db.from('members').select('class_name').eq('id', req.user.id)) : [];
+  const c = String((m && m.class_name) || '').trim().toLowerCase();
+  res.json(lists.filter(l => !String(l.class_name || '').trim() || String(l.class_name).trim().toLowerCase() === c));
+}));
+app.post('/api/reading-lists', auth(), h(async (req, res) => {
+  if (!(await isTeacher(req.user))) return res.status(403).json({ error: 'Only teachers and librarians can create reading lists.' });
+  const { title, class_name, note, bookIds } = req.body;
+  if (!title || !Array.isArray(bookIds) || !bookIds.length) return res.status(400).json({ error: 'Add a title and at least one book.' });
+  await q(db.from('reading_lists').insert({ title, class_name: class_name || '', note: String(note || '').slice(0, 300), book_ids: bookIds.slice(0, 50).map(Number), created_by: req.user.name }));
+  res.status(201).json({ ok: true });
+}));
+app.delete('/api/reading-lists/:id', auth(), h(async (req, res) => {
+  const [l] = await q(db.from('reading_lists').select('*').eq('id', req.params.id));
+  if (!l) return res.status(404).json({ error: 'List not found.' });
+  if (req.user.role !== 'admin' && l.created_by !== req.user.name) return res.status(403).json({ error: 'Not your list.' });
+  await q(db.from('reading_lists').delete().eq('id', l.id));
+  res.json({ ok: true });
+}));
 
 // ---- dashboard numbers ----
 app.get('/api/stats', auth('admin'), h(async (_req, res) => {
