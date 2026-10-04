@@ -4,7 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kilinochchi Central College Library</title>
-<link rel="icon" href="kcc_logo.png">
+<link rel="icon" type="image/png" sizes="48x48" href="favicon-gold-48.png?v=2">
+<link rel="icon" type="image/png" sizes="256x256" href="favicon-gold.png?v=2">
 <link href="https://fonts.googleapis.com/css2?family=Hind+Madurai:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root{--ink:#22272d;--slate:#2b3036;--gate:#e4572e;--gate-d:#c4431f;--paper:#fff;--wash:#f3f4f6;--line:#dfe2e6;--mute:#5d6670;--ok:#1d7a4b;--warn:#b42318}
@@ -106,13 +107,13 @@ footer b{color:#fff}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png?v=2">
 <meta name="theme-color" content="#2b3036">
 </head>
 <body>
 
 <header class="bar"><div class="in">
-  <img src="kccl.png" alt="KCC crest">
+  <img src="kccl.png?v=2" alt="KCC crest">
   <div class="name">Kilinochchi Central College<small>School Library</small></div>
   <nav>
     <button class="nb on" data-view="catalog">Catalogue</button>
@@ -745,7 +746,7 @@ const actions = {
     const role = $('#pcRole').value, one = $('#pcOne').value.trim().toLowerCase();
     const list = memCache.filter(x => x.status !== 'Inactive' && (!role || x.role === role) && (!one || x.id.toLowerCase() === one));
     if (!list.length) throw new Error('No members to print.');
-    doPrint(list.map(x => `<div class="idc"><div class="idh"><img src="kccl.png" alt=""><div><b>Kilinochchi Central College</b><br>School Library</div></div><div class="idb"><div class="idn">${esc(x.name)}</div><div class="idr">${esc(x.role)} &nbsp;·&nbsp; ${esc(x.id)}</div><svg class="bc" data-v="${esc(x.id)}"></svg></div></div>`).join(''), 'cards');
+    doPrint(list.map(x => `<div class="idc"><div class="idh"><img src="kccl.png?v=2" alt=""><div><b>Kilinochchi Central College</b><br>School Library</div></div><div class="idb"><div class="idn">${esc(x.name)}</div><div class="idr">${esc(x.role)} &nbsp;·&nbsp; ${esc(x.id)}</div><svg class="bc" data-v="${esc(x.id)}"></svg></div></div>`).join(''), 'cards');
   }),
   printLabels: () => run(async () => {
     const c = $('#plCat').value, f = Math.max(1, +$('#plFrom').value || 1), t = +$('#plTo').value || 60;
