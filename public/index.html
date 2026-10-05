@@ -6,7 +6,7 @@
 <title>Kilinochchi Central College Library</title>
 <link rel="icon" type="image/png" sizes="48x48" href="favicon-gold-48.png?v=2">
 <link rel="icon" type="image/png" sizes="256x256" href="favicon-gold.png?v=2">
-<link href="https://fonts.googleapis.com/css2?family=Hind+Madurai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Hind+Madurai:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
 <style>
 :root{--ink:#22272d;--slate:#2b3036;--gate:#e4572e;--gate-d:#c4431f;--paper:#fff;--wash:#f3f4f6;--line:#dfe2e6;--mute:#5d6670;--ok:#1d7a4b;--warn:#b42318}
 *{box-sizing:border-box}
@@ -101,6 +101,115 @@ footer b{color:#fff}
 @media print{body.pr>*:not(#printArea){display:none!important}body.pr #printArea{display:grid}@page{margin:8mm}}
 [hidden]{display:none!important}
 @media(max-width:720px){.row{grid-template-columns:1fr auto}.row .cat{display:none}.bar nav{margin-left:0;width:100%}}
+
+</style>
+<style id="theme">
+:root{--gate:#d6aa28;--gate-d:#b8901c;--gold-ink:#8a6a0a;--shadow:0 1px 2px rgba(16,24,40,.05),0 10px 28px rgba(16,24,40,.08)}
+[data-theme=dark]{--gold-ink:#e6c25a;--shadow:0 1px 2px rgba(0,0,0,.4),0 10px 28px rgba(0,0,0,.35)}
+::selection{background:#f3e2a6;color:#1b1f24}
+body{font-size:16px;line-height:1.6}
+h1,h2,h3{font-family:'Playfair Display','Hind Madurai',Georgia,serif;letter-spacing:.2px}
+:focus-visible{outline:3px solid var(--gate);outline-offset:2px}
+
+/* header */
+header.bar{background:linear-gradient(180deg,#1f252c,#2b3036);box-shadow:0 2px 0 var(--gate),0 8px 20px rgba(0,0,0,.2)}
+.bar .in{max-width:1240px;padding:12px 24px}
+.bar img{height:54px;filter:drop-shadow(0 2px 3px rgba(0,0,0,.45))}
+.bar .name{font-size:18px;letter-spacing:.3px}
+.bar .name small{color:var(--gate);font-weight:600;letter-spacing:1.4px;text-transform:uppercase;font-size:11px}
+.nb{border-radius:999px;padding:8px 14px;font-weight:500;transition:background .2s,color .2s}
+.nb:hover{background:rgba(255,255,255,.09);color:#fff}
+.nb.on{background:rgba(214,170,40,.18);color:var(--gate)}
+.nb.cta{background:var(--gate);color:#1b1f24;font-weight:700}
+.nb.cta:hover{background:#e8bd3c;color:#1b1f24}
+#menuBtn{display:none;margin-left:auto;font-size:22px;line-height:1;padding:6px 14px}
+
+/* hero */
+.hero{position:relative;overflow:hidden;padding:76px 24px 96px;background:linear-gradient(105deg,rgba(14,18,23,.95) 0%,rgba(14,18,23,.82) 55%,rgba(14,18,23,.5) 100%),url(kcc-enter.jpeg) center/cover}
+.hero::after{content:"";position:absolute;right:-8%;bottom:-45%;width:60%;height:80%;background:radial-gradient(closest-side,rgba(214,170,40,.25),transparent);pointer-events:none}
+.hero .in{max-width:1240px;position:relative;z-index:1}
+.hero h1{font-size:clamp(34px,5.4vw,58px);line-height:1.1;font-weight:700;margin:0 0 14px;max-width:15em;text-shadow:0 2px 14px rgba(0,0,0,.4)}
+.hero p{color:#ecdca4;font-size:18px;margin:0 0 30px}
+.search{background:var(--paper);padding:8px;border-radius:18px;box-shadow:0 20px 44px rgba(0,0,0,.4);max-width:1000px;gap:6px}
+.search input{border-radius:12px;padding:15px 18px;font-size:16px;background:transparent;color:var(--ink)}
+.search select{border-radius:12px;padding:14px;background:var(--wash);color:var(--ink);border:0}
+.hero .pub{margin:20px 0 0;color:#d3d9df;font-size:14px;letter-spacing:.2px}
+.hero .pub b{color:var(--gate);font-size:22px;font-family:'Playfair Display','Hind Madurai',serif}
+.hero.slim{padding:30px 24px}
+.hero.slim h1{font-size:clamp(26px,3.4vw,38px);margin:0}
+.hero.slim p,.hero.slim .search,.hero.slim .pub{display:none}
+
+/* welcome cards */
+main{max-width:1240px;padding:28px 24px 72px}
+.feat{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin:-66px 0 28px;position:relative;z-index:2}
+.fc{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:20px;box-shadow:var(--shadow);cursor:pointer;text-align:left;font:inherit;color:inherit;transition:transform .2s,box-shadow .2s,border-color .2s}
+.fc:hover{transform:translateY(-3px);border-color:var(--gate);box-shadow:0 16px 34px rgba(16,24,40,.16)}
+.fc svg{width:32px;height:32px;stroke:var(--gate);fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;margin-bottom:10px;display:block}
+.fc b{display:block;font-size:16px;margin-bottom:2px}.fc span{color:var(--mute);font-size:14px;line-height:1.45;display:block}
+
+/* panels */
+.panel{border-radius:18px;box-shadow:var(--shadow);padding:28px}
+.panel>h2{font-size:27px;margin:0 0 18px;position:relative;padding-bottom:12px}
+.panel>h2::after{content:"";position:absolute;left:0;bottom:0;width:52px;height:3px;border-radius:3px;background:var(--gate)}
+.row{transition:background .15s}
+.row:hover{background:rgba(214,170,40,.07)}
+
+/* catalogue cards */
+#list{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:16px}
+#list .empty{grid-column:1/-1}
+#list .row{display:flex;flex-direction:column;align-items:stretch;gap:12px;padding:18px;border:1px solid var(--line);border-radius:16px;background:var(--paper);transition:transform .2s,box-shadow .2s,border-color .2s}
+#list .row:first-of-type{border-top:1px solid var(--line)}
+#list .row:hover{transform:translateY(-3px);box-shadow:var(--shadow);border-color:var(--gate);background:var(--paper)}
+#list .row b{font-size:17px;line-height:1.3}
+#list .row .cat,#list .row .cat.m{display:inline-block;align-self:flex-start;font-size:13px;padding:3px 12px;border-radius:99px;background:rgba(214,170,40,.15);color:var(--gold-ink);font-weight:600}
+#list .acts{justify-content:flex-start;margin-top:auto}
+#list .row img{width:48px;height:68px}
+
+/* controls */
+.btn{border-radius:10px;padding:8px 14px;font-weight:600;transition:border-color .15s,box-shadow .15s,background .15s}
+.btn:hover{border-color:var(--gate);box-shadow:0 2px 10px rgba(16,24,40,.1)}
+.btn.p{background:var(--gate);border-color:var(--gate);color:#1b1f24}
+.btn.p:hover{background:#e8bd3c;border-color:#e8bd3c}
+[data-theme=dark] .btn.p{color:#1b1f24}
+.tabs{gap:8px;border:0;margin-bottom:22px}
+.tab{border-radius:999px;border:1px solid var(--line);border-bottom:1px solid var(--line);padding:8px 16px;background:var(--paper);color:var(--mute);font-weight:500;transition:all .15s}
+.tab:hover{border-color:var(--gate);color:var(--ink)}
+.tab.on{background:var(--gate);border-color:var(--gate);color:#1b1f24;font-weight:700}
+[data-theme=dark] .tab.on{color:#1b1f24}
+.stat{border-radius:16px;box-shadow:var(--shadow)}
+.stat b{font-family:'Playfair Display','Hind Madurai',serif;font-size:34px}
+label input:focus,label select:focus,.search input:focus{border-color:var(--gate);box-shadow:0 0 0 3px rgba(214,170,40,.28);outline:0}
+.notice{background:#fffaf0;border:1px solid #efdfae;border-left:5px solid var(--gate);border-radius:12px}
+[data-theme=dark] .notice{background:#2a2718;border-color:#5b4e1d}
+dialog{border-radius:18px;box-shadow:0 30px 70px rgba(0,0,0,.4)}
+#toast{border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.32)}
+
+/* footer */
+footer{background:linear-gradient(180deg,#232930,#171c21);color:#b8c0c8;text-align:left;padding:0;border-top:3px solid var(--gate);font-size:14px}
+.fgrid{max-width:1240px;margin:auto;padding:42px 24px 26px;display:grid;grid-template-columns:2fr 1fr 1fr;gap:32px}
+.fbrand{display:flex;gap:14px;align-items:center;color:#fff;line-height:1.35}
+.fbrand img{height:68px}
+.fabout{margin:12px 0 0;color:#aab3bc}
+.fgrid h4{color:#fff;margin:0 0 12px;font-size:15px;letter-spacing:.5px;font-family:'Playfair Display','Hind Madurai',serif}
+.fgrid a{display:block;color:#b8c0c8;padding:4px 0;cursor:pointer}
+.fgrid a:hover{color:var(--gate)}
+.fgrid .ict{margin:0 0 4px}
+.fbar{border-top:1px solid #323a43;max-width:1240px;margin:auto;padding:16px 24px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;font-size:13px;color:#8e98a3}
+
+/* mobile menu */
+@media(max-width:900px){
+  #menuBtn{display:block}
+  .bar nav{display:none;width:100%;flex-direction:column;align-items:stretch;margin-left:0;padding-bottom:8px}
+  .bar.open nav{display:flex}
+  .nb{text-align:left;border-radius:10px}
+  .fgrid{grid-template-columns:1fr}
+  .hero{padding:48px 20px 80px}
+}
+@media(max-width:720px){#list{grid-template-columns:1fr}#list .row{display:flex}#list .row .cat{display:inline-block}.panel{padding:20px}}
+@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.panel,.feat{animation:rise .45s ease both}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+@media print{.feat{display:none!important}}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
@@ -112,9 +221,10 @@ footer b{color:#fff}
 </head>
 <body>
 
-<header class="bar"><div class="in">
+<header class="bar" id="topbar"><div class="in">
   <img src="kccl.png?v=2" alt="KCC crest">
   <div class="name">Kilinochchi Central College<small>School Library</small></div>
+  <button class="nb" id="menuBtn" data-notr aria-label="Menu">☰</button>
   <nav>
     <button class="nb on" data-view="catalog">Catalogue</button>
     <button class="nb" data-view="papers">Past papers</button>
@@ -133,8 +243,8 @@ footer b{color:#fff}
 </div></header>
 <div id="offBar" hidden></div>
 
-<section class="hero"><div class="in">
-  <h1>Find your next book at KCC</h1>
+<section class="hero" id="hero"><div class="in">
+  <h1 id="heroTitle">Find your next book at KCC</h1>
   <p>கற்று ஆய்ந்து ஒழுகு &nbsp;·&nbsp; Serving our students since 1927</p>
   <div class="search">
     <input id="q" type="search" placeholder="Search in Tamil or English, e.g. thirukkural" aria-label="Search books">
@@ -142,10 +252,18 @@ footer b{color:#fff}
     <select id="avail" aria-label="Availability"><option value="">All books</option><option value="1">Available only</option></select>
     <select id="lang2" aria-label="Language"><option value="">All languages</option><option value="ta">Tamil</option><option value="en">English / other</option></select>
   </div>
+  <div class="pub" id="pubStats"></div>
 </div></section>
 
 <main>
-  <section id="v-catalog" class="panel"><div id="notices"></div><h2>Catalogue</h2><div class="pub" id="pubStats"></div><div class="shelf" id="shelf"></div><div id="list"></div></section>
+  <section id="v-welcome" class="feat">
+    <button class="fc" data-goto="catalog"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><b>Search in Tamil or English</b><span>Find any book by title, author or ledger number.</span></button>
+    <button class="fc" data-goto="papers"><svg viewBox="0 0 24 24"><path d="M7 3h8l4 4v14H7z"/><path d="M15 3v4h4M10 12h6M10 16h6"/></svg><b>Past papers and notes</b><span>Download O/L and A/L papers and class notes.</span></button>
+    <button class="fc" data-goto="parent"><svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg><b>Parent view</b><span>See your child's borrowed books and fines.</span></button>
+    <button class="fc" data-goto="login"><svg viewBox="0 0 24 24"><path d="M4 5a2 2 0 012-2h12v16H6a2 2 0 00-2 2z"/><path d="M4 21V5M9 8h6"/></svg><b>Borrow, renew and reserve</b><span>Sign in to manage your books online.</span></button>
+  </section>
+
+  <section id="v-catalog" class="panel"><div id="notices"></div><h2>Catalogue</h2><div class="shelf" id="shelf"></div><div id="list"></div></section>
 
   <section id="v-papers" class="panel" hidden>
     <h2>Past papers and notes</h2>
@@ -344,9 +462,22 @@ footer b{color:#fff}
 </main>
 
 <footer>
-  <div><b>Kilinochchi Central College</b> (National School), Kilinochchi, Sri Lanka</div>
-  <div class="fx ict">ICT Union of KCC</div>
-  <div class="dev">Designed &amp; Developed by <b>Kegaan</b></div>
+  <div class="fgrid">
+    <div>
+      <div class="fbrand"><img src="kccl.png?v=2" alt="KCC crest"><div><b>Kilinochchi Central College</b><br>School Library</div></div>
+      <p class="fabout">(National School), Kilinochchi, Sri Lanka</p>
+    </div>
+    <div>
+      <h4>Explore</h4>
+      <a data-goto="catalog">Catalogue</a><a data-goto="papers">Past papers</a><a data-goto="parent">Parent view</a><a data-goto="login">Sign in</a>
+    </div>
+    <div>
+      <h4>Credits</h4>
+      <div class="ict">ICT Union of KCC</div>
+      <div class="dev">Designed &amp; Developed by <b>Kegaan</b></div>
+    </div>
+  </div>
+  <div class="fbar"><span>© <span id="yr"></span> Kilinochchi Central College</span><span>1927</span></div>
 </footer>
 
 <dialog id="loginDlg">
@@ -436,6 +567,10 @@ const run = async (fn, ok) => { try { await fn(); if (ok) toast(ok); } catch (e)
 // ---- views ----
 function show(view) {
   ['catalog', 'papers', 'parent', 'my', 'lists', 'readers', 'request', 'admin'].forEach(v => $('#v-' + v).hidden = v !== view);
+  $('#v-welcome').hidden = view !== 'catalog';
+  $('#hero').classList.toggle('slim', view !== 'catalog');
+  $('#heroTitle').textContent = HERO_TITLES[view] || HERO_TITLES.catalog;
+  $('#topbar').classList.remove('open');
   $$('.nb[data-view]').forEach(b => b.classList.toggle('on', b.dataset.view === view));
   if (view === 'my') loadMy();
   if (view === 'readers') loadReaders();
@@ -847,6 +982,18 @@ Object.assign(actions, {
   mailBackup: () => run(async () => { await api('/api/backup/email', 'POST'); }, 'Backup emailed to the admin address.')
 });
 
+// ---- site chrome: mobile menu, quick links, page titles ----
+const HERO_TITLES = { catalog: 'Find your next book at KCC', papers: 'Past papers and notes', parent: 'Parent view', my: 'My books', lists: 'Reading lists', readers: 'Readers of the year', request: 'Request a book', admin: 'Librarian desk' };
+$('#menuBtn').onclick = () => $('#topbar').classList.toggle('open');
+document.addEventListener('click', e => {
+  const g = e.target.closest('[data-goto]'); if (!g) return;
+  e.preventDefault();
+  if (g.dataset.goto === 'login') { if (!me) $('#loginDlg').showModal(); else show('my'); }
+  else { show(g.dataset.goto); if (g.dataset.goto === 'catalog') $('#q').focus(); }
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+});
+$('#yr').textContent = new Date().getFullYear();
+
 // ---- offline mode: browse offline, issue and return offline, sync later ----
 let offline = !navigator.onLine, syncing = false;
 const getQ = () => JSON.parse(localStorage.getItem('kccQueue') || '[]');
@@ -1232,7 +1379,7 @@ const TA = {
   'Past papers and notes': 'கடந்தகால வினாத்தாள்கள் மற்றும் குறிப்புகள்', 'Search': 'தேடல்', 'Grade / Exam': 'தரம் / பரீட்சை', 'Type': 'வகை', 'No papers found yet.': 'இன்னும் வினாத்தாள்கள் இல்லை.',
   'Dashboard': 'முகப்புப் பலகை', 'Add a book': 'புத்தகம் சேர்', 'Members': 'உறுப்பினர்கள்', 'Requests': 'கோரிக்கைகள்', 'Overdue': 'தாமதமானவை', 'History': 'வரலாறு',
   'Import Excel': 'Excel இறக்கு', 'Scan': 'ஸ்கேன்', 'Reservations': 'முன்பதிவுகள்', 'Reports': 'அறிக்கைகள்', 'Activity': 'செயல்பாடு', 'Print cards': 'அட்டைகள் அச்சிடு',
-  'Papers': 'வினாத்தாள்கள்', 'Duplicates': 'இரட்டைப் பதிவுகள்', 'Notices': 'அறிவிப்புகள்', 'New arrivals': 'புதிய வரவுகள்', 'Popular': 'பிரபலமானவை', 'Lost / damaged': 'தொலைந்தவை / சேதமடைந்தவை', 'Post notice': 'அறிவிப்பு வெளியிடு', 'Readers': 'வாசகர்கள்', 'Designed & Developed by': 'வடிவமைத்து உருவாக்கியவர்:', 'Saved for later': 'பின்னர் படிக்க', 'Saved ✓': 'சேமிக்கப்பட்டது ✓', '★ Reviews': '★ விமர்சனங்கள்', 'Post review': 'விமர்சனம் இடு', 'No reviews yet.': 'இன்னும் விமர்சனங்கள் இல்லை.', 'Print my certificate': 'என் சான்றிதழை அச்சிடு', 'Email reminders now': 'மின்னஞ்சல் நினைவூட்டல் அனுப்பு', 'Email backup now': 'காப்புப் பிரதியை மின்னஞ்சலில் அனுப்பு', 'Readers of the year': 'ஆண்டின் சிறந்த வாசகர்கள்', 'Categories': 'வகைகள்', 'Parent view': 'பெற்றோர் பார்வை', 'Sign-ups': 'புதிய சேர்க்கைகள்', 'Restore': 'மீட்டெடு', 'New member? Sign up': 'புதிய உறுப்பினரா? பதிவு செய்யுங்கள்', 'Class competition': 'வகுப்புப் போட்டி', 'Books never borrowed': 'ஒருபோதும் இரவல் பெறாத புத்தகங்கள்', 'Email weekly summary now': 'வாராந்திர சுருக்கத்தை மின்னஞ்சலில் அனுப்பு', 'Part / waive': 'பகுதி / தள்ளுபடி', 'Fines waived': 'தள்ளுபடி செய்த அபராதம்', 'Reading lists': 'வாசிப்புப் பட்டியல்கள்', 'Promote classes': 'வகுப்பு உயர்வு', 'Parent letters': 'பெற்றோர் கடிதங்கள்', 'Create list': 'பட்டியல் உருவாக்கு', 'Apply promotion': 'உயர்வைப் பயன்படுத்து', 'Print QR poster': 'QR சுவரொட்டி அச்சிடு', 'Condition of the book': 'புத்தகத்தின் நிலை', 'All books': 'அனைத்து புத்தகங்கள்', 'Available only': 'கிடைப்பவை மட்டும்', 'All languages': 'அனைத்து மொழிகள்', 'Tamil': 'தமிழ்', 'English / other': 'ஆங்கிலம் / பிற', 'Holidays': 'விடுமுறை நாட்கள்', 'Feature': 'முன்னிலைப்படுத்து', 'Show': 'காட்டு', 'See this book': 'இந்த புத்தகத்தைப் பார்', 'Recycle bin': 'குப்பைத் தொட்டி', 'Settings': 'அமைப்புகள்', 'Save settings': 'அமைப்புகளைச் சேமி', 'All classes': 'அனைத்து வகுப்புகள்', 'Print list': 'பட்டியல் அச்சிடு', 'Rename / merge': 'பெயர் மாற்று / இணை', 'Restore': 'மீட்டெடு', 'Delete forever': 'நிரந்தரமாக நீக்கு', 'Class': 'வகுப்பு', 'Loans per month': 'மாதாந்த இரவல்கள்', 'Books by category': 'வகை வாரியாக புத்தகங்கள்', 'Stock check': 'இருப்பு சரிபார்ப்பு', 'Total books': 'மொத்த புத்தகங்கள்', 'Book titles': 'புத்தகத் தலைப்புகள்',
+  'Papers': 'வினாத்தாள்கள்', 'Duplicates': 'இரட்டைப் பதிவுகள்', 'Notices': 'அறிவிப்புகள்', 'New arrivals': 'புதிய வரவுகள்', 'Popular': 'பிரபலமானவை', 'Lost / damaged': 'தொலைந்தவை / சேதமடைந்தவை', 'Post notice': 'அறிவிப்பு வெளியிடு', 'Readers': 'வாசகர்கள்', 'Designed & Developed by': 'வடிவமைத்து உருவாக்கியவர்:', 'Saved for later': 'பின்னர் படிக்க', 'Saved ✓': 'சேமிக்கப்பட்டது ✓', '★ Reviews': '★ விமர்சனங்கள்', 'Post review': 'விமர்சனம் இடு', 'No reviews yet.': 'இன்னும் விமர்சனங்கள் இல்லை.', 'Print my certificate': 'என் சான்றிதழை அச்சிடு', 'Email reminders now': 'மின்னஞ்சல் நினைவூட்டல் அனுப்பு', 'Email backup now': 'காப்புப் பிரதியை மின்னஞ்சலில் அனுப்பு', 'Readers of the year': 'ஆண்டின் சிறந்த வாசகர்கள்', 'Categories': 'வகைகள்', 'Parent view': 'பெற்றோர் பார்வை', 'Search in Tamil or English': 'தமிழ் அல்லது ஆங்கிலத்தில் தேடுங்கள்', 'Find any book by title, author or ledger number.': 'தலைப்பு, ஆசிரியர் அல்லது பேரேட்டு எண் மூலம் எந்த புத்தகத்தையும் கண்டறியுங்கள்.', 'Download O/L and A/L papers and class notes.': 'O/L, A/L வினாத்தாள்கள் மற்றும் வகுப்புக் குறிப்புகளைப் பதிவிறக்குங்கள்.', "See your child's borrowed books and fines.": 'உங்கள் பிள்ளை எடுத்த புத்தகங்கள் மற்றும் அபராதங்களைப் பாருங்கள்.', 'Borrow, renew and reserve': 'இரவல், புதுப்பிப்பு, முன்பதிவு', 'Sign in to manage your books online.': 'உங்கள் புத்தகங்களை ஆன்லைனில் நிர்வகிக்க உள்நுழையுங்கள்.', 'Explore': 'ஆராய்க', 'Credits': 'உருவாக்கம்', 'Sign-ups': 'புதிய சேர்க்கைகள்', 'Restore': 'மீட்டெடு', 'New member? Sign up': 'புதிய உறுப்பினரா? பதிவு செய்யுங்கள்', 'Class competition': 'வகுப்புப் போட்டி', 'Books never borrowed': 'ஒருபோதும் இரவல் பெறாத புத்தகங்கள்', 'Email weekly summary now': 'வாராந்திர சுருக்கத்தை மின்னஞ்சலில் அனுப்பு', 'Part / waive': 'பகுதி / தள்ளுபடி', 'Fines waived': 'தள்ளுபடி செய்த அபராதம்', 'Reading lists': 'வாசிப்புப் பட்டியல்கள்', 'Promote classes': 'வகுப்பு உயர்வு', 'Parent letters': 'பெற்றோர் கடிதங்கள்', 'Create list': 'பட்டியல் உருவாக்கு', 'Apply promotion': 'உயர்வைப் பயன்படுத்து', 'Print QR poster': 'QR சுவரொட்டி அச்சிடு', 'Condition of the book': 'புத்தகத்தின் நிலை', 'All books': 'அனைத்து புத்தகங்கள்', 'Available only': 'கிடைப்பவை மட்டும்', 'All languages': 'அனைத்து மொழிகள்', 'Tamil': 'தமிழ்', 'English / other': 'ஆங்கிலம் / பிற', 'Holidays': 'விடுமுறை நாட்கள்', 'Feature': 'முன்னிலைப்படுத்து', 'Show': 'காட்டு', 'See this book': 'இந்த புத்தகத்தைப் பார்', 'Recycle bin': 'குப்பைத் தொட்டி', 'Settings': 'அமைப்புகள்', 'Save settings': 'அமைப்புகளைச் சேமி', 'All classes': 'அனைத்து வகுப்புகள்', 'Print list': 'பட்டியல் அச்சிடு', 'Rename / merge': 'பெயர் மாற்று / இணை', 'Restore': 'மீட்டெடு', 'Delete forever': 'நிரந்தரமாக நீக்கு', 'Class': 'வகுப்பு', 'Loans per month': 'மாதாந்த இரவல்கள்', 'Books by category': 'வகை வாரியாக புத்தகங்கள்', 'Stock check': 'இருப்பு சரிபார்ப்பு', 'Total books': 'மொத்த புத்தகங்கள்', 'Book titles': 'புத்தகத் தலைப்புகள்',
   'Available books': 'கிடைக்கும் புத்தகங்கள்', 'Borrowed books': 'இரவல் புத்தகங்கள்', 'Overdue books': 'தாமதமான புத்தகங்கள்', 'Pending requests': 'நிலுவை கோரிக்கைகள்',
   'Download backup (Excel)': 'காப்புப் பிரதி பதிவிறக்கு (Excel)', 'Title': 'தலைப்பு', 'Category': 'வகை', 'Ledger number': 'பேரேட்டு எண்', 'Ledger No': 'பேரேட்டு எண்',
   'Copies': 'பிரதிகள்', 'PDF link (optional)': 'PDF இணைப்பு (விருப்பம்)', 'Add book': 'புத்தகம் சேர்', 'Member ID': 'உறுப்பினர் எண்', 'Full name': 'முழுப்பெயர்',
