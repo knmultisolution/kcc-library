@@ -143,6 +143,29 @@ dialog{max-height:90vh;overflow:auto}
 }
 @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
 </style>
+<style id="desk">
+/* Librarian desk: grouped menu on the left, page title on top */
+.desk{display:grid;grid-template-columns:232px 1fr;gap:22px;align-items:start}
+.deskMain{min-width:0}
+.deskNav{position:sticky;top:84px;background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:12px;max-height:calc(100vh - 100px);overflow:auto}
+.deskNav .grp+.grp{margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}
+.deskNav h4{margin:0 0 6px 8px;font-size:11px;letter-spacing:1.2px;text-transform:uppercase;color:var(--mute);font-weight:700}
+.deskNav .tab{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:9px 10px;margin:1px 0;border:0;border-bottom:0;border-radius:10px;background:none;color:var(--ink);font-weight:500;cursor:pointer}
+.deskNav .tab i{font-style:normal;width:22px;text-align:center;font-size:16px}
+.deskNav .tab span{flex:1}
+.deskNav .tab:hover{background:rgba(127,127,127,.12)}
+.deskNav .tab.on{background:var(--slate);color:#fff;box-shadow:inset 3px 0 0 var(--gate)}
+.deskNav .tab em{font-style:normal;background:var(--warn);color:#fff;border-radius:99px;font-size:11px;font-weight:700;min-width:20px;padding:1px 6px;text-align:center}
+.deskHead{border-bottom:1px solid var(--line);margin-bottom:18px;padding-bottom:12px}
+.deskHead h3{margin:0;font-size:22px}
+.deskHead p{margin:4px 0 0;color:var(--mute);font-size:14px}
+.quick{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin-bottom:20px}
+.qa{display:flex;flex-direction:column;gap:2px;text-align:left;padding:16px;border:1px solid var(--line);border-radius:14px;background:var(--paper);color:var(--ink);cursor:pointer;font:inherit;transition:transform .15s,border-color .15s,box-shadow .15s}
+.qa:hover{transform:translateY(-2px);border-color:var(--gate);box-shadow:0 6px 18px rgba(16,24,40,.1)}
+.qa i{font-style:normal;font-size:24px}.qa b{font-size:16px}.qa span{color:var(--mute);font-size:13px}
+#deskJump{display:none;width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--ink);font-size:16px;margin-bottom:14px}
+@media(max-width:900px){.desk{grid-template-columns:1fr}.deskNav{display:none}#deskJump{display:block}}
+</style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
@@ -234,32 +257,17 @@ dialog{max-height:90vh;overflow:auto}
 
   <section id="v-admin" class="panel" hidden>
     <h2>Librarian desk</h2>
-    <div class="tabs" id="tabs">
-      <button class="tab on" data-tab="dash">Dashboard</button>
-      <button class="tab" data-tab="add">Add a book</button>
-      <button class="tab" data-tab="members">Members</button>
-      <button class="tab" data-tab="requests">Requests</button>
-      <button class="tab" data-tab="overdue">Overdue</button>
-      <button class="tab" data-tab="history">History</button>
-      <button class="tab" data-tab="import">Import Excel</button>
-      <button class="tab" data-tab="scan">Scan</button>
-      <button class="tab" data-tab="resv">Reservations</button>
-      <button class="tab" data-tab="reports">Reports</button>
-      <button class="tab" data-tab="audit">Activity</button>
-      <button class="tab" data-tab="print">Print cards</button>
-      <button class="tab" data-tab="papers">Papers</button>
-      <button class="tab" data-tab="stock">Stock check</button>
-      <button class="tab" data-tab="dups">Duplicates</button>
-      <button class="tab" data-tab="notices">Notices</button>
-      <button class="tab" data-tab="cats">Categories</button>
-      <button class="tab" data-tab="trash">Recycle bin</button>
-      <button class="tab" data-tab="settings">Settings</button>
-      <button class="tab" data-tab="holidays">Holidays</button>
-      <button class="tab" data-tab="promote">Promote classes</button>
-      <button class="tab" data-tab="signups">Sign-ups</button>
-      <button class="tab" data-tab="restore">Restore</button>
-    </div>
-    <div id="t-dash"><div class="stats" id="stats"></div>
+    <select id="deskJump" aria-label="Go to"></select>
+    <div class="desk"><aside class="deskNav" id="tabs"><div class="grp"><h4>Overview</h4><button class="tab on" data-tab="dash"><i>📊</i><span>Dashboard</span></button></div><div class="grp"><h4>Daily work</h4><button class="tab" data-tab="scan"><i>📷</i><span>Scan</span></button><button class="tab" data-tab="overdue"><i>⏰</i><span>Overdue</span></button><button class="tab" data-tab="resv"><i>📌</i><span>Reservations</span></button><button class="tab" data-tab="requests"><i>💬</i><span>Requests</span></button><button class="tab" data-tab="signups"><i>🆕</i><span>Sign-ups</span></button></div><div class="grp"><h4>Books</h4><button class="tab" data-tab="add"><i>➕</i><span>Add a book</span></button><button class="tab" data-tab="import"><i>📥</i><span>Import Excel</span></button><button class="tab" data-tab="cats"><i>🏷️</i><span>Categories</span></button><button class="tab" data-tab="dups"><i>👯</i><span>Duplicates</span></button><button class="tab" data-tab="stock"><i>📋</i><span>Stock check</span></button><button class="tab" data-tab="papers"><i>📄</i><span>Papers</span></button></div><div class="grp"><h4>Members</h4><button class="tab" data-tab="members"><i>👥</i><span>Members</span></button><button class="tab" data-tab="promote"><i>🎓</i><span>Promote classes</span></button><button class="tab" data-tab="print"><i>🖨️</i><span>Print cards</span></button></div><div class="grp"><h4>Reports</h4><button class="tab" data-tab="reports"><i>📈</i><span>Reports</span></button><button class="tab" data-tab="history"><i>🕘</i><span>History</span></button><button class="tab" data-tab="audit"><i>📝</i><span>Activity</span></button></div><div class="grp"><h4>Setup</h4><button class="tab" data-tab="notices"><i>📢</i><span>Notices</span></button><button class="tab" data-tab="holidays"><i>🗓️</i><span>Holidays</span></button><button class="tab" data-tab="settings"><i>⚙️</i><span>Settings</span></button><button class="tab" data-tab="trash"><i>🗑️</i><span>Recycle bin</span></button><button class="tab" data-tab="restore"><i>♻️</i><span>Restore</span></button></div></aside>
+    <div class="deskMain"><div class="deskHead"><h3 id="deskTitle">Dashboard</h3><p id="deskHint"></p></div>
+    <div id="t-dash">
+      <div class="quick">
+        <button class="qa" data-act="gotoTab" data-id="scan"><i>📷</i><b>Issue / Return</b><span>Scan a book and a member card</span></button>
+        <button class="qa" data-act="gotoTab" data-id="overdue"><i>⏰</i><b>Overdue</b><span>Late books and reminders</span></button>
+        <button class="qa" data-act="gotoTab" data-id="add"><i>➕</i><b>Add a book</b><span>Add one book</span></button>
+        <button class="qa" data-act="gotoTab" data-id="members"><i>👥</i><b>Members</b><span>Add or edit members</span></button>
+      </div>
+      <div class="stats" id="stats"></div>
       <div id="charts" style="margin-top:22px"></div>
       <div style="margin-top:18px"><button class="btn p" data-act="backup">Download backup (Excel)</button> <button class="btn" data-act="mailBackup">Email backup now</button> <button class="btn" data-act="mailSummary">Email weekly summary now</button></div></div>
     <div id="t-add" hidden>
@@ -382,6 +390,8 @@ dialog{max-height:90vh;overflow:auto}
       <input type="file" id="xlsFile" accept=".xlsx,.xls,.csv">
       <div id="xlsPreview" style="margin-top:16px"></div>
     </div>
+  
+    </div></div>
   </section>
 </main>
 
@@ -483,7 +493,7 @@ function show(view) {
   if (view === 'readers') loadReaders();
   if (view === 'lists') loadLists();
   if (view === 'papers') loadPapers();
-  if (view === 'admin') loadTab(document.querySelector('.tab.on').dataset.tab);
+  if (view === 'admin') { buildJump(); loadTab(document.querySelector('.tab.on').dataset.tab); loadBadges(); }
 }
 $$('.nb[data-view]').forEach(b => b.onclick = () => show(b.dataset.view));
 
@@ -642,6 +652,7 @@ $$('.tab').forEach(b => b.onclick = () => {
   $$('.tab').forEach(x => x.classList.toggle('on', x === b)); loadTab(b.dataset.tab);
 });
 function loadTab(tab) {
+  deskHeader(tab);
   ['dash', 'add', 'members', 'requests', 'overdue', 'history', 'import', 'scan', 'resv', 'reports', 'audit', 'print', 'papers', 'stock', 'dups', 'notices', 'cats', 'trash', 'settings', 'holidays', 'promote', 'signups', 'restore'].forEach(t => $('#t-' + t).hidden = t !== tab);
   if (tab === 'dash') run(async () => {
     const d = await api('/api/stats'), n = x => Number(x).toLocaleString();
@@ -888,6 +899,36 @@ Object.assign(actions, {
   mailNow: () => confirm('Send an email to every overdue member who has an email address?') && run(async () => { const r = await api('/api/reminders/send', 'POST'); toast(`${r.sent} email(s) sent.`); }),
   mailBackup: () => run(async () => { await api('/api/backup/email', 'POST'); }, 'Backup emailed to the admin address.')
 });
+
+// ---- Librarian desk: title, jump menu, badges ----
+const HINTS = {"dash": "Today at a glance.", "scan": "Scan a book and a member card to issue or return.", "overdue": "Books that are late. Send reminders and print letters.", "resv": "Members waiting for a book that is out.", "requests": "Books members would like the library to buy.", "signups": "New members waiting for approval.", "add": "Add one book to the catalogue.", "import": "Add many books at once from an Excel file.", "cats": "Fix category names or merge categories.", "dups": "Titles that appear more than once.", "stock": "Count the shelves and find missing books.", "papers": "Past papers and notes for students.", "members": "Add, edit and import members.", "promote": "Move classes up at the end of the year.", "print": "Print ID cards, book labels and the QR poster.", "reports": "Charts and lists about library use.", "history": "Every loan, with return dates.", "audit": "Who did what, and when.", "notices": "Messages shown at the top of the catalogue.", "holidays": "School holidays. Due dates skip these days.", "settings": "Fine amount, borrowing limits and reading goal.", "trash": "Deleted books and members. Restore them here.", "restore": "Put back data from a backup file."};
+function deskHeader(tab) {
+  const sp = document.querySelector(`.tab[data-tab="${tab}"] span`);
+  $('#deskTitle').textContent = sp ? sp.textContent : '';
+  $('#deskHint').textContent = HINTS[tab] || '';
+  $$('.tab').forEach(x => x.classList.toggle('on', x.dataset.tab === tab));
+  const j = $('#deskJump'); if (j) j.value = tab;
+}
+function buildJump() {
+  const on = (document.querySelector('.tab.on') || {}).dataset;
+  $('#deskJump').innerHTML = [...document.querySelectorAll('.deskNav .grp')].map(g => `<optgroup label="${esc(g.querySelector('h4').textContent)}">${[...g.querySelectorAll('.tab')].map(b => `<option value="${b.dataset.tab}">${esc(b.querySelector('span').textContent)}</option>`).join('')}</optgroup>`).join('');
+  if (on) $('#deskJump').value = on.tab;
+}
+$('#deskJump').onchange = e => document.querySelector(`.tab[data-tab="${e.target.value}"]`).click();
+function setBadge(t, n) {
+  const b = document.querySelector(`.tab[data-tab="${t}"]`); if (!b) return;
+  let el = b.querySelector('em');
+  if (!n) { if (el) el.remove(); return; }
+  if (!el) { el = document.createElement('em'); b.appendChild(el); }
+  el.textContent = n;
+}
+async function loadBadges() {
+  try {
+    const [s, su, rv] = await Promise.all([api('/api/stats'), api('/api/signups'), api('/api/reservations')]);
+    setBadge('overdue', s.overdue); setBadge('requests', s.requests); setBadge('signups', su.length); setBadge('resv', rv.length);
+  } catch (e) { /* badges are optional */ }
+}
+Object.assign(actions, { gotoTab: t => document.querySelector(`.tab[data-tab="${t}"]`).click() });
 
 // ---- phone menu ----
 $('#menuBtn').onclick = () => $('#topbar').classList.toggle('open');
@@ -1278,7 +1319,7 @@ const TA = {
   'Past papers and notes': 'கடந்தகால வினாத்தாள்கள் மற்றும் குறிப்புகள்', 'Search': 'தேடல்', 'Grade / Exam': 'தரம் / பரீட்சை', 'Type': 'வகை', 'No papers found yet.': 'இன்னும் வினாத்தாள்கள் இல்லை.',
   'Dashboard': 'முகப்புப் பலகை', 'Add a book': 'புத்தகம் சேர்', 'Members': 'உறுப்பினர்கள்', 'Requests': 'கோரிக்கைகள்', 'Overdue': 'தாமதமானவை', 'History': 'வரலாறு',
   'Import Excel': 'Excel இறக்கு', 'Scan': 'ஸ்கேன்', 'Reservations': 'முன்பதிவுகள்', 'Reports': 'அறிக்கைகள்', 'Activity': 'செயல்பாடு', 'Print cards': 'அட்டைகள் அச்சிடு',
-  'Papers': 'வினாத்தாள்கள்', 'Duplicates': 'இரட்டைப் பதிவுகள்', 'Notices': 'அறிவிப்புகள்', 'New arrivals': 'புதிய வரவுகள்', 'Popular': 'பிரபலமானவை', 'Lost / damaged': 'தொலைந்தவை / சேதமடைந்தவை', 'Post notice': 'அறிவிப்பு வெளியிடு', 'Readers': 'வாசகர்கள்', 'Designed & Developed by': 'வடிவமைத்து உருவாக்கியவர்:', 'Saved for later': 'பின்னர் படிக்க', 'Saved ✓': 'சேமிக்கப்பட்டது ✓', '★ Reviews': '★ விமர்சனங்கள்', 'Post review': 'விமர்சனம் இடு', 'No reviews yet.': 'இன்னும் விமர்சனங்கள் இல்லை.', 'Print my certificate': 'என் சான்றிதழை அச்சிடு', 'Email reminders now': 'மின்னஞ்சல் நினைவூட்டல் அனுப்பு', 'Email backup now': 'காப்புப் பிரதியை மின்னஞ்சலில் அனுப்பு', 'Readers of the year': 'ஆண்டின் சிறந்த வாசகர்கள்', 'Categories': 'வகைகள்', 'Parent view': 'பெற்றோர் பார்வை', 'Loading books...': 'புத்தகங்கள் ஏற்றப்படுகின்றன...', 'Sign-ups': 'புதிய சேர்க்கைகள்', 'Restore': 'மீட்டெடு', 'New member? Sign up': 'புதிய உறுப்பினரா? பதிவு செய்யுங்கள்', 'Class competition': 'வகுப்புப் போட்டி', 'Books never borrowed': 'ஒருபோதும் இரவல் பெறாத புத்தகங்கள்', 'Email weekly summary now': 'வாராந்திர சுருக்கத்தை மின்னஞ்சலில் அனுப்பு', 'Part / waive': 'பகுதி / தள்ளுபடி', 'Fines waived': 'தள்ளுபடி செய்த அபராதம்', 'Reading lists': 'வாசிப்புப் பட்டியல்கள்', 'Promote classes': 'வகுப்பு உயர்வு', 'Parent letters': 'பெற்றோர் கடிதங்கள்', 'Create list': 'பட்டியல் உருவாக்கு', 'Apply promotion': 'உயர்வைப் பயன்படுத்து', 'Print QR poster': 'QR சுவரொட்டி அச்சிடு', 'Condition of the book': 'புத்தகத்தின் நிலை', 'All books': 'அனைத்து புத்தகங்கள்', 'Available only': 'கிடைப்பவை மட்டும்', 'All languages': 'அனைத்து மொழிகள்', 'Tamil': 'தமிழ்', 'English / other': 'ஆங்கிலம் / பிற', 'Holidays': 'விடுமுறை நாட்கள்', 'Feature': 'முன்னிலைப்படுத்து', 'Show': 'காட்டு', 'See this book': 'இந்த புத்தகத்தைப் பார்', 'Recycle bin': 'குப்பைத் தொட்டி', 'Settings': 'அமைப்புகள்', 'Save settings': 'அமைப்புகளைச் சேமி', 'All classes': 'அனைத்து வகுப்புகள்', 'Print list': 'பட்டியல் அச்சிடு', 'Rename / merge': 'பெயர் மாற்று / இணை', 'Restore': 'மீட்டெடு', 'Delete forever': 'நிரந்தரமாக நீக்கு', 'Class': 'வகுப்பு', 'Loans per month': 'மாதாந்த இரவல்கள்', 'Books by category': 'வகை வாரியாக புத்தகங்கள்', 'Stock check': 'இருப்பு சரிபார்ப்பு', 'Total books': 'மொத்த புத்தகங்கள்', 'Book titles': 'புத்தகத் தலைப்புகள்',
+  'Papers': 'வினாத்தாள்கள்', 'Duplicates': 'இரட்டைப் பதிவுகள்', 'Notices': 'அறிவிப்புகள்', 'New arrivals': 'புதிய வரவுகள்', 'Popular': 'பிரபலமானவை', 'Lost / damaged': 'தொலைந்தவை / சேதமடைந்தவை', 'Post notice': 'அறிவிப்பு வெளியிடு', 'Readers': 'வாசகர்கள்', 'Designed & Developed by': 'வடிவமைத்து உருவாக்கியவர்:', 'Saved for later': 'பின்னர் படிக்க', 'Saved ✓': 'சேமிக்கப்பட்டது ✓', '★ Reviews': '★ விமர்சனங்கள்', 'Post review': 'விமர்சனம் இடு', 'No reviews yet.': 'இன்னும் விமர்சனங்கள் இல்லை.', 'Print my certificate': 'என் சான்றிதழை அச்சிடு', 'Email reminders now': 'மின்னஞ்சல் நினைவூட்டல் அனுப்பு', 'Email backup now': 'காப்புப் பிரதியை மின்னஞ்சலில் அனுப்பு', 'Readers of the year': 'ஆண்டின் சிறந்த வாசகர்கள்', 'Categories': 'வகைகள்', 'Parent view': 'பெற்றோர் பார்வை', "Today at a glance.": "இன்றைய நிலவரம் ஒரே பார்வையில்.", "Scan a book and a member card to issue or return.": "புத்தகத்தையும் உறுப்பினர் அட்டையையும் ஸ்கேன் செய்து வழங்க அல்லது திருப்பப் பெறுங்கள்.", "Books that are late. Send reminders and print letters.": "தாமதமான புத்தகங்கள். நினைவூட்டல் அனுப்புங்கள், கடிதங்களை அச்சிடுங்கள்.", "Members waiting for a book that is out.": "புத்தகத்துக்காகக் காத்திருக்கும் உறுப்பினர்கள்.", "Books members would like the library to buy.": "உறுப்பினர்கள் வாங்கக் கேட்ட புத்தகங்கள்.", "New members waiting for approval.": "ஒப்புதலுக்காகக் காத்திருக்கும் புதிய உறுப்பினர்கள்.", "Add one book to the catalogue.": "பட்டியலில் ஒரு புத்தகத்தைச் சேர்க்கவும்.", "Add many books at once from an Excel file.": "Excel கோப்பிலிருந்து பல புத்தகங்களை ஒரே நேரத்தில் சேர்க்கவும்.", "Fix category names or merge categories.": "வகைகளின் பெயர்களைத் திருத்துங்கள் அல்லது இணையுங்கள்.", "Titles that appear more than once.": "ஒன்றுக்கு மேற்பட்ட முறை வரும் தலைப்புகள்.", "Count the shelves and find missing books.": "அலமாரிகளை எண்ணி காணாமல் போன புத்தகங்களைக் கண்டறியுங்கள்.", "Past papers and notes for students.": "மாணவர்களுக்கான வினாத்தாள்களும் குறிப்புகளும்.", "Add, edit and import members.": "உறுப்பினர்களைச் சேர்க்க, திருத்த, இறக்க.", "Move classes up at the end of the year.": "ஆண்டு இறுதியில் வகுப்புகளை உயர்த்துங்கள்.", "Print ID cards, book labels and the QR poster.": "அடையாள அட்டைகள், புத்தக லேபல்கள், QR சுவரொட்டியை அச்சிடுங்கள்.", "Charts and lists about library use.": "நூலகப் பயன்பாடு பற்றிய வரைபடங்களும் பட்டியல்களும்.", "Every loan, with return dates.": "ஒவ்வொரு இரவலும், திருப்பிய திகதிகளுடன்.", "Who did what, and when.": "யார் எப்போது என்ன செய்தார்.", "Messages shown at the top of the catalogue.": "நூல் பட்டியலின் மேலே காட்டப்படும் அறிவிப்புகள்.", "School holidays. Due dates skip these days.": "பாடசாலை விடுமுறைகள். திரும்பும் திகதி இந்நாட்களைத் தவிர்க்கும்.", "Fine amount, borrowing limits and reading goal.": "அபராதம், இரவல் வரம்புகள், வாசிப்பு இலக்கு.", "Deleted books and members. Restore them here.": "நீக்கிய புத்தகங்கள், உறுப்பினர்கள். இங்கே மீட்டெடுக்கலாம்.", "Put back data from a backup file.": "காப்புப் பிரதி கோப்பிலிருந்து தரவை மீட்டெடுக்கவும்.", 'Overview': 'மேலோட்டம்', 'Daily work': 'தினசரி வேலை', 'Books': 'புத்தகங்கள்', 'Setup': 'அமைப்பு', 'Issue / Return': 'வழங்கு / திருப்பு', 'Scan a book and a member card': 'புத்தகத்தையும் அட்டையையும் ஸ்கேன் செய்', 'Late books and reminders': 'தாமதமான புத்தகங்கள், நினைவூட்டல்', 'Add one book': 'ஒரு புத்தகம் சேர்', 'Add or edit members': 'உறுப்பினர்களைச் சேர்/திருத்து', 'Loading books...': 'புத்தகங்கள் ஏற்றப்படுகின்றன...', 'Sign-ups': 'புதிய சேர்க்கைகள்', 'Restore': 'மீட்டெடு', 'New member? Sign up': 'புதிய உறுப்பினரா? பதிவு செய்யுங்கள்', 'Class competition': 'வகுப்புப் போட்டி', 'Books never borrowed': 'ஒருபோதும் இரவல் பெறாத புத்தகங்கள்', 'Email weekly summary now': 'வாராந்திர சுருக்கத்தை மின்னஞ்சலில் அனுப்பு', 'Part / waive': 'பகுதி / தள்ளுபடி', 'Fines waived': 'தள்ளுபடி செய்த அபராதம்', 'Reading lists': 'வாசிப்புப் பட்டியல்கள்', 'Promote classes': 'வகுப்பு உயர்வு', 'Parent letters': 'பெற்றோர் கடிதங்கள்', 'Create list': 'பட்டியல் உருவாக்கு', 'Apply promotion': 'உயர்வைப் பயன்படுத்து', 'Print QR poster': 'QR சுவரொட்டி அச்சிடு', 'Condition of the book': 'புத்தகத்தின் நிலை', 'All books': 'அனைத்து புத்தகங்கள்', 'Available only': 'கிடைப்பவை மட்டும்', 'All languages': 'அனைத்து மொழிகள்', 'Tamil': 'தமிழ்', 'English / other': 'ஆங்கிலம் / பிற', 'Holidays': 'விடுமுறை நாட்கள்', 'Feature': 'முன்னிலைப்படுத்து', 'Show': 'காட்டு', 'See this book': 'இந்த புத்தகத்தைப் பார்', 'Recycle bin': 'குப்பைத் தொட்டி', 'Settings': 'அமைப்புகள்', 'Save settings': 'அமைப்புகளைச் சேமி', 'All classes': 'அனைத்து வகுப்புகள்', 'Print list': 'பட்டியல் அச்சிடு', 'Rename / merge': 'பெயர் மாற்று / இணை', 'Restore': 'மீட்டெடு', 'Delete forever': 'நிரந்தரமாக நீக்கு', 'Class': 'வகுப்பு', 'Loans per month': 'மாதாந்த இரவல்கள்', 'Books by category': 'வகை வாரியாக புத்தகங்கள்', 'Stock check': 'இருப்பு சரிபார்ப்பு', 'Total books': 'மொத்த புத்தகங்கள்', 'Book titles': 'புத்தகத் தலைப்புகள்',
   'Available books': 'கிடைக்கும் புத்தகங்கள்', 'Borrowed books': 'இரவல் புத்தகங்கள்', 'Overdue books': 'தாமதமான புத்தகங்கள்', 'Pending requests': 'நிலுவை கோரிக்கைகள்',
   'Download backup (Excel)': 'காப்புப் பிரதி பதிவிறக்கு (Excel)', 'Title': 'தலைப்பு', 'Category': 'வகை', 'Ledger number': 'பேரேட்டு எண்', 'Ledger No': 'பேரேட்டு எண்',
   'Copies': 'பிரதிகள்', 'PDF link (optional)': 'PDF இணைப்பு (விருப்பம்)', 'Add book': 'புத்தகம் சேர்', 'Member ID': 'உறுப்பினர் எண்', 'Full name': 'முழுப்பெயர்',
